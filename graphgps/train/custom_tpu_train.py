@@ -18,6 +18,7 @@ from graphgps.loss.subtoken_prediction_loss import subtoken_cross_entropy
 from graphgps.utils import cfg_to_dict, flatten_dict, make_wandb_name
 from graphgps.history import History
 
+
 def pairwise_hinge_loss_batch(pred, true):
     # pred: (batch_size, num_preds )
     # true: (batch_size, num_preds)
@@ -40,6 +41,7 @@ def pairwise_hinge_loss(pred, true):
     opa_preds = pred[i_idx[opa_indices]] - pred[j_idx[opa_indices]]
     return loss, pairwise_true[opa_indices], opa_preds
 
+
 def preprocess_batch(batch, model, num_sample_configs):
     
     batch_list = batch.to_data_list()
@@ -61,12 +63,14 @@ def preprocess_batch(batch, model, num_sample_configs):
         g.adj = SparseTensor(row=g.edge_index[0], col=g.edge_index[1], sparse_sizes=(g.num_nodes, g.num_nodes))
         processed_batch_list.append(g)
     return Batch.from_data_list(processed_batch_list), sample_idx
-        
-def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_accumulation):
+
+
+def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History, batch_accumulation: int):
     model.train()
     optimizer.zero_grad()
     time_start = time.time()
     num_sample_config = 32
+    
     for iter, batch in enumerate(loader):
         batch, sampled_idx = preprocess_batch(batch, model, num_sample_config)
         batch.to(torch.device(cfg.device))
@@ -77,15 +81,17 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
         batch_other = []
         batch_num_parts = []
         segments_to_train = []
+        
         for i in range(len(batch_list)):
-            num_parts = len(batch_list[i].partptr) - 1
+            partptr = batch_list[i].partptr.cpu().numpy()
+            num_parts = len(partptr) - 1
             batch_num_parts.extend([num_parts] * num_sample_config)
             segment_to_train = np.random.randint(num_parts)
             segments_to_train.append(segment_to_train)
             
             for j in range(num_parts):
-                start = int(batch_list[i].partptr.cpu().numpy()[j])
-                length = int(batch_list[i].partptr.cpu().numpy()[j+1]) - start
+                start = int(partptr[j])
+                length = int(partptr[j + 1]) - start
 
                 N, E = batch_list[i].num_nodes, batch_list[i].num_edges
                 data = copy.copy(batch_list[i])
@@ -112,35 +118,54 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
                             op_feats=data.op_feats,
                             op_code=data.op_code,
                             config_feats=data.config_feats_full[:, k, :], 
-                            num_nodes=length
+                            num_nodes=length,
                         )
                         batch_train_list.append(unfold_g)
                 else:
                     for k in range(len(data.y)):
-                        batch_other.append(emb_table.pull(batch_list[i].partition_idx.cpu() + num_parts * sampled_idx[k] + j))       
+                        batch_other.append(
+                            emb_table.pull(
+                                batch_list[i].partition_idx.cpu() + num_parts * sampled_idx[k] + j
+                            )
+                        )
         
         batch_train = Batch.from_data_list(batch_train_list)
         batch_train = batch_train.to(torch.device(cfg.device))
         true = true.to(torch.device(cfg.device))
-        # more preprocessing
+        """
+        concat node features & linear project to lower dim
+        """
         batch_train.split = 'train'
         batch_train.op_emb = model.emb(batch_train.op_code.long())
-        batch_train.x = torch.cat((batch_train.op_feats, batch_train.op_emb * model.op_weights, batch_train.config_feats * model.config_weights), dim=-1)
+        batch_train.x = torch.cat([
+            batch_train.op_feats, 
+            batch_train.op_emb * model.op_weights, 
+            batch_train.config_feats * model.config_weights
+        ], dim=-1)
         batch_train.x = model.linear_map(batch_train.x)
         
+        """
+        Inference on sampled graph segments
+        """
         module_len = len(list(model.model.children()))
         for i, module in enumerate(model.model.children()):
             if i < module_len - 1:
                 batch_train = module(batch_train)
             if i == module_len - 1:
-                batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) + tnn.global_mean_pool(batch_train.x, batch_train.batch)
+                batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) \
+                    + tnn.global_mean_pool(batch_train.x, batch_train.batch)
         graph_embed = batch_train_embed / torch.norm(batch_train_embed, dim=-1, keepdim=True)
         for i, module in enumerate(model.model.children()):
             if i == module_len - 1:
                 graph_embed = module.layer_post_mp(graph_embed)
         
+
         binomial = torch.distributions.binomial.Binomial(probs=0.5)
-        if len(batch_other) > 0:
+        if batch_other:
+            """
+            Sample some cached embedding of graph segements, 
+            use mean of cached + inferenced embedding as full-graph embedding.
+            """
             batch_other = torch.cat(batch_other, dim=0)
             mask =  binomial.sample((batch_other.shape[0], 1)).to(torch.device(cfg.device))
             batch_other = batch_other.to(torch.device(cfg.device))
@@ -153,11 +178,14 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
                     part_cnt += 1
             batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
             batch_num_parts = batch_num_parts.view(-1, 1)
-            multiplier_num = (batch_num_parts-1)/ 2 + 1
-            pred = graph_embed*multiplier_num + batch_other_embed
+            multiplier_num = (batch_num_parts - 1)/ 2 + 1
+            pred = graph_embed * multiplier_num + batch_other_embed
         else:
             pred = graph_embed
         
+        """
+        Compute loss
+        """
         if cfg.dataset.name == 'ogbg-code2':
             loss, pred_score = subtoken_cross_entropy(pred, true)
             _true = true
@@ -173,6 +201,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred_score.detach().to('cpu', non_blocking=True)
         loss.backward()
+        
         # Parameters update after accumulating gradients for given num. batches.
         if ((iter + 1) % batch_accumulation == 0) or (iter + 1 == len(loader)):
             if cfg.optim.clip_grad_norm:
@@ -181,7 +210,11 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table, batch_ac
             optimizer.zero_grad()
         
         for i in range(graph_embed.shape[0]):
-            push_idx = batch_list[i // num_sample_config].partition_idx.cpu()+sampled_idx[i % num_sample_config]*(len(batch_list[i // num_sample_config].partptr)-1)+segments_to_train[i // num_sample_config]
+            push_idx = (
+                batch_list[i // num_sample_config].partition_idx.cpu() + 
+                sampled_idx[i % num_sample_config] * (len(batch_list[i // num_sample_config].partptr) - 1) + 
+                segments_to_train[i // num_sample_config]
+            )
             emb_table.push(graph_embed[i].cpu(), push_idx)
         
         logger.update_stats(true=_true,

@@ -41,8 +41,15 @@ class TPUGraphs(InMemoryDataset):
     def processed_file_names(self) -> List[str]:
         return ['data_segment_{}.pt'.format(self.thres), 'split_dict_segment_{}.pt'.format(self.thres)]
 
-
     def process(self):
+        """
+        * Key "node_config_ids" contains int32 vector with shape (nc, ) and every entry is in {0, 1, ..., n - 1} i.e. indicating the indices of the configurable nodes. 
+          For these nodes, they can have an additional feature vector that instructs the compiler (described next).
+        * Key "node_config_feat" contains float32 tensor with shape (c, nc, 18). Entry [j, k] gives an 18-dimensional vector describing the configuration features 
+          for node d["node_config_ids"][k] for the jth run (please see Subsection "Layout Config Features").
+        * Key "config_runtime" contains int32 vector with shape (c, ) where the jth entry contains the runtime of the jth run 
+          (i.e., when nodes are configured with d["node_config_feat"][j]).
+        """
         data_list = []
         split_names = ['train', 'valid', 'test']
         split_dict = {'train': [], 'valid': [], 'test': []}
@@ -63,9 +70,9 @@ class TPUGraphs(InMemoryDataset):
                     op_code = torch.tensor(np_file["node_opcode"])
                     config_feats = torch.tensor(np_file["node_config_feat"])
                     config_feats = config_feats.view(-1, config_feats.shape[-1])
-                    config_idx = torch.tensor(np_file["node_config_ids"])
+                    config_idx = torch.tensor(np_file["node_config_ids"])  # node-indies of configurable nodes
                     num_config = torch.tensor(np_file["node_config_feat"].shape[0])
-                    num_config_idx = torch.tensor(np_file["node_config_feat"].shape[1])
+                    num_config_idx = torch.tensor(np_file["node_config_feat"].shape[1])  # number of configurable nodes
                     
                     num_nodes = torch.tensor(np_file["node_feat"].shape[0])
                     num_parts = num_nodes // self.thres + 1
@@ -83,6 +90,7 @@ class TPUGraphs(InMemoryDataset):
                     parts_cnt += num_parts * num_config
             torch.save(self.collate(data_list), self.processed_paths[0])
             torch.save(split_dict, self.processed_paths[1])
+    
     def get_idx_split(self):
         return torch.load(self.processed_paths[1])
 
