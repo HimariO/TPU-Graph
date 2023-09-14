@@ -338,6 +338,9 @@ def eval_opa(y_true, y_pred):
     pairwise_true = y_true[i_idx] > y_true[j_idx]
     opa_indices = pairwise_true.nonzero()[0].flatten()
     opa_preds = y_pred[i_idx[opa_indices]] - y_pred[j_idx[opa_indices]]
-    opa_acc = float((opa_preds > 0).sum()) / opa_preds.shape[0]
+    if len(opa_indices) > 0:
+        opa_acc = float((opa_preds > 0).sum()) / opa_preds.shape[0]
+    else:
+        opa_acc = 0.0
     return opa_acc
     

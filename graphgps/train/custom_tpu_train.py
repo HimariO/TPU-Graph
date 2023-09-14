@@ -304,21 +304,18 @@ def eval_epoch(logger, loader, model, split='val'):
         for i, module in enumerate(custom_gnn.children()):
             if i == module_len - 1:
                 res = module.layer_post_mp(graph_embed)
-        pred = torch.zeros(len(loader.dataset), len(data.y), 1).to(torch.device(cfg.device))
+        pred = torch.zeros([len(batch_list), len(data.y), 1]).to(torch.device(cfg.device))
         part_cnt = 0
         for i, num_parts in enumerate(batch_num_parts):
             for _ in range(num_parts):
                 for j in range(num_sample_config):
                     pred[i, j, :] += res[part_cnt, :]
                     part_cnt += 1
-        batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
-        batch_num_parts = batch_num_parts.view(-1, 1)
+        
+        # batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
+        # batch_num_parts = batch_num_parts.view(-1, 1)
         extra_stats = {}
-        if cfg.dataset.name == 'ogbg-code2':
-            loss, pred_score = subtoken_cross_entropy(pred, true)
-            _true = true
-            _pred = pred_score
-        elif cfg.dataset.name == 'TPUGraphs':
+        if cfg.dataset.name == 'TPUGraphs':
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
             loss = pairwise_hinge_loss_batch(pred, true)
