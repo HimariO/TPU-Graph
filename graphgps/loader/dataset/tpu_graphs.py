@@ -58,6 +58,7 @@ class TPUGraphs(InMemoryDataset):
         for raw_path in self.raw_paths:
             for split_name in split_names:
                 filenames = glob.glob(osp.join(os.path.join(raw_path, split_name), '*.npz'))
+                print(f' * Process {raw_path} {split_name}')
                 for filename in filenames:
                     split_dict[split_name].append(graphs_cnt)
                     np_file = dict(np.load(filename))
@@ -88,6 +89,9 @@ class TPUGraphs(InMemoryDataset):
                     data_list.append(data)
                     graphs_cnt += 1
                     parts_cnt += num_parts * num_config
+            
+            if not data_list:
+              raise RuntimeError(f"Can't find any dataset samples in: {self.raw_paths}")
             torch.save(self.collate(data_list), self.processed_paths[0])
             torch.save(split_dict, self.processed_paths[1])
     

@@ -5,9 +5,12 @@ dataset:
   task: graph
   task_type: ranking
   transductive: False
+  dir: /home/ron/Projects/TPU-Graph/datasets/
+  source: xla
+  search: default
 train:
   mode: custom_tpu
-  batch_size: 32
+  batch_size: 2
   eval_period: 1
   ckpt_period: 100
   sampler: full_batch

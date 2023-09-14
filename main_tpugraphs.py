@@ -7,9 +7,11 @@ import graphgps  # noqa, register custom modules
 from graphgps.optimizer.extra_optimizers import ExtendedSchedulerConfig
 
 from torch_geometric.graphgym.cmd_args import parse_args
-from torch_geometric.graphgym.config import (cfg, dump_cfg,
-                                             set_agg_dir, set_cfg, load_cfg,
-                                             makedirs_rm_exist)
+from torch_geometric.graphgym.config import (
+    cfg, dump_cfg,
+    set_cfg, load_cfg,
+    makedirs_rm_exist
+)
 from torch_geometric.graphgym.loader import create_loader
 from torch_geometric.graphgym.logger import set_printing
 from torch_geometric.graphgym.optim import create_optimizer, \
@@ -109,7 +111,11 @@ def run_loop_settings():
         run_ids = split_indices
     return run_ids, seeds, split_indices
 
+
 class TPUModel(torch.nn.Module):
+    """
+    Wrapper to handle feature embedding/encoding
+    """
     def __init__(self, model):
         super().__init__()
         self.model = model
@@ -117,6 +123,7 @@ class TPUModel(torch.nn.Module):
         self.linear_map = nn.Linear(286, 128, bias=True)
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
         self.config_weights = nn.Parameter(torch.ones(1,18,requires_grad=True) * 100)
+
 
 if __name__ == '__main__':
     # Load cmd line args

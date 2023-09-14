@@ -12,6 +12,9 @@ def overwrite_defaults_cfg(cfg):
     those that exist in core GraphGym.
     """
 
+    cfg.train.mode = 'custom'  # 'standard' uses PyTorch-Lightning since PyG 2.1
+    cfg.device = 'cuda'  # 'standard' uses PyTorch-Lightning since PyG 2.1
+
     # Overwrite default dataset name
     cfg.dataset.name = 'none'
 
@@ -31,3 +34,6 @@ def extended_cfg(cfg):
     # always checkpoint the current best model based on validation performance,
     # instead, when False, follow cfg.train.eval_period checkpointing frequency.
     cfg.train.ckpt_best = False
+
+    cfg.dataset.source = 'nlp'
+    cfg.dataset.search = 'random'

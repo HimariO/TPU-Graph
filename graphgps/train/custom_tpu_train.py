@@ -147,15 +147,16 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
         """
         Inference on sampled graph segments
         """
-        module_len = len(list(model.model.children()))
-        for i, module in enumerate(model.model.children()):
+        custom_gnn = model.model.model
+        module_len = len(list(custom_gnn.children()))
+        for i, module in enumerate(custom_gnn.children()):
             if i < module_len - 1:
                 batch_train = module(batch_train)
             if i == module_len - 1:
                 batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) \
                     + tnn.global_mean_pool(batch_train.x, batch_train.batch)
         graph_embed = batch_train_embed / torch.norm(batch_train_embed, dim=-1, keepdim=True)
-        for i, module in enumerate(model.model.children()):
+        for i, module in enumerate(custom_gnn.children()):
             if i == module_len - 1:
                 graph_embed = module.layer_post_mp(graph_embed)
         
@@ -265,8 +266,15 @@ def eval_epoch(logger, loader, model, split='val'):
                 row, col, _ = adj.coo()
                 data.edge_index = torch.stack([row, col], dim=0)
                 for k in range(len(data.y)):
-                    unfold_g = Data(edge_index=data.edge_index, op_feats=data.op_feats, op_code=data.op_code, config_feats=data.config_feats_full[:, k, :], num_nodes=length)
+                    unfold_g = Data(
+                        edge_index=data.edge_index,
+                        op_feats=data.op_feats,
+                        op_code=data.op_code,
+                        config_feats=data.config_feats_full[:, k, :], 
+                        num_nodes=length
+                    )
                     batch_seg.append(unfold_g)
+        
         batch_seg = Batch.from_data_list(batch_seg)
         batch_seg.to(torch.device(cfg.device))
         true = true.to(torch.device(cfg.device))
@@ -274,17 +282,26 @@ def eval_epoch(logger, loader, model, split='val'):
         # batch_train.config_feats = model.config_feats_transform(batch_train.config_feats)
         batch_seg.op_emb = model.emb(batch_seg.op_code.long())
         # batch_train.op_feats = model.op_feats_transform(batch_train.op_feats)
-        batch_seg.x = torch.cat((batch_seg.op_feats, model.op_weights * batch_seg.op_emb, batch_seg.config_feats * model.config_weights), dim=-1)
+        batch_seg.x = torch.cat(
+            [
+                batch_seg.op_feats, 
+                model.op_weights * batch_seg.op_emb, 
+                batch_seg.config_feats * model.config_weights
+            ], 
+            dim=-1
+        )
         batch_seg.x = model.linear_map(batch_seg.x)
        
-        module_len = len(list(model.model.children()))
-        for i, module in enumerate(model.model.children()):
+        custom_gnn = model.model.model
+        module_len = len(list(custom_gnn.children()))
+        for i, module in enumerate(custom_gnn.children()):
             if i < module_len - 1:
                 batch_seg = module(batch_seg)
             if i == module_len - 1:
-                batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
+                batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + \
+                    tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
         graph_embed = batch_seg_embed / torch.norm(batch_seg_embed, dim=-1, keepdim=True)
-        for i, module in enumerate(model.model.children()):
+        for i, module in enumerate(custom_gnn.children()):
             if i == module_len - 1:
                 res = module.layer_post_mp(graph_embed)
         pred = torch.zeros(len(loader.dataset), len(data.y), 1).to(torch.device(cfg.device))

@@ -320,7 +320,11 @@ def preformat_MalNetLarge(dataset_dir, feature_set):
 
 def preformat_TPUGraphs(dataset_dir):
    
-    dataset = TPUGraphs(dataset_dir)
+    dataset = TPUGraphs(
+        dataset_dir, 
+        source=cfg.dataset.get('source', 'nlp'),
+        search=cfg.dataset.get('search', 'random'),
+    )
     dataset.name = 'TPUGraphs'
     
     split_dict = dataset.get_idx_split()
