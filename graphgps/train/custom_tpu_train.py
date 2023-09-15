@@ -187,11 +187,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
         """
         Compute loss
         """
-        if cfg.dataset.name == 'ogbg-code2':
-            loss, pred_score = subtoken_cross_entropy(pred, true)
-            _true = true
-            _pred = pred_score
-        elif cfg.dataset.name == 'TPUGraphs':
+        if 'TPUGraphs' in cfg.dataset.name:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
             loss = pairwise_hinge_loss_batch(pred, true)
@@ -315,7 +311,7 @@ def eval_epoch(logger, loader, model, split='val'):
         # batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
         # batch_num_parts = batch_num_parts.view(-1, 1)
         extra_stats = {}
-        if cfg.dataset.name == 'TPUGraphs':
+        if 'TPUGraphs' in cfg.dataset.name:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
             loss = pairwise_hinge_loss_batch(pred, true)

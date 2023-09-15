@@ -63,13 +63,13 @@ def setup_standard_split(dataset):
                 if split_index != 0:
                     raise IndexError(f"This dataset has single standard split")
 
-    elif task_level == 'graph':
-        for split_name in 'train_graph_index', 'val_graph_index', 'test_graph_index':
-            if not hasattr(dataset.data, split_name):
-                raise ValueError(f"Missing '{split_name}' for standard split")
-        if split_index != 0:
-            raise NotImplementedError(f"Multiple standard splits not supported "
-                                      f"for dataset task level: {task_level}")
+    # elif task_level == 'graph':
+    #     for split_name in ['train_graph_index', 'val_graph_index', 'test_graph_index']:
+    #         if not hasattr(dataset.data, split_name):
+    #             raise ValueError(f"Missing '{split_name}' for standard split")
+    #     if split_index != 0:
+    #         raise NotImplementedError(f"Multiple standard splits not supported "
+    #                                   f"for dataset task level: {task_level}")
 
     elif task_level == 'link_pred':
         for split_name in 'train_edge_index', 'val_edge_index', 'test_edge_index':
