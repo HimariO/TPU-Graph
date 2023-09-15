@@ -127,6 +127,9 @@ class TPUModel(torch.nn.Module):
 
 
 if __name__ == '__main__':
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning)
+
     # Load cmd line args
     args = parse_args()
     # Load config file

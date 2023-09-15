@@ -1,6 +1,8 @@
 import logging
 import time
 import copy
+from typing import *
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -66,6 +68,90 @@ def preprocess_batch(batch, model, num_sample_configs):
     return Batch.from_data_list(processed_batch_list), sample_idx
 
 
+def batch_sample_graph_segs(batch_list: List[Data], sampled_idx: torch.Tensor, emb_table: History, num_sample_config=32):
+    batch_train_list = []
+    batch_other = []
+    batch_num_parts = []
+    segments_to_train = []
+    
+    for i in range(len(batch_list)):
+        partptr = batch_list[i].partptr.cpu().numpy()
+        num_parts = len(partptr) - 1
+        batch_num_parts.extend([num_parts] * num_sample_config)
+        segment_to_train = np.random.randint(num_parts)
+        segments_to_train.append(segment_to_train)
+        
+        for j in range(num_parts):
+            start = int(partptr[j])
+            length = int(partptr[j + 1]) - start
+
+            N, E = batch_list[i].num_nodes, batch_list[i].num_edges
+            data = copy.copy(batch_list[i])
+            del data.num_nodes
+            adj, data.adj = data.adj, None
+
+            adj = adj.narrow(0, start, length).narrow(1, start, length)
+            edge_idx = adj.storage.value()
+
+            for key, item in data:
+                if isinstance(item, torch.Tensor) and item.size(0) == N:
+                    data[key] = item.narrow(0, start, length)
+                elif isinstance(item, torch.Tensor) and item.size(0) == E:
+                    data[key] = item[edge_idx]
+                else:
+                    data[key] = item
+
+            row, col, _ = adj.coo()
+            data.edge_index = torch.stack([row, col], dim=0)
+            if j == segment_to_train:
+                for k in range(len(data.y)):
+                    unfold_g = Data(
+                        edge_index=data.edge_index,
+                        op_feats=data.op_feats,
+                        op_code=data.op_code,
+                        config_feats=data.config_feats_full[:, k, :], 
+                        num_nodes=length,
+                    )
+                    batch_train_list.append(unfold_g)
+            else:
+                for k in range(len(data.y)):
+                    batch_other.append(
+                        emb_table.pull(
+                            batch_list[i].partition_idx.cpu() + num_parts * sampled_idx[k] + j
+                        )
+                    )
+    return (
+        batch_train_list,
+        batch_other,
+        batch_num_parts,
+        segments_to_train,
+    )
+
+
+def cached_node_embed(
+        batch_list: List[Data],
+        sampled_idx,
+        segments_to_train: List[int],
+        emb_table: History
+    ) -> List[torch.Tensor]:
+    batch_other = []
+    
+    for i, data in enumerate(batch_list):
+        partptr = data.partptr.cpu().numpy()
+        num_parts = len(partptr) - 1
+        
+        for j in range(num_parts):
+            if j == segments_to_train[i]:
+                continue
+            for k in range(len(data.y)):
+                batch_other.append(
+                    emb_table.pull(
+                        data.partition_idx.cpu() + num_parts * sampled_idx[k] + j
+                    )
+                )
+    return batch_other
+    
+
 def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History, batch_accumulation: int):
     model.train()
     optimizer.zero_grad()
@@ -75,62 +161,34 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
     for iter, batch in enumerate(loader):
         # batch, sampled_idx = preprocess_batch(batch, model, num_sample_config)
         batch, sampled_idx = batch
-        batch.to(torch.device(cfg.device))
-        true = batch.y
         
-        batch_list = batch.to_data_list()
-        batch_train_list = []
-        batch_other = []
-        batch_num_parts = []
-        segments_to_train = []
-        
-        for i in range(len(batch_list)):
-            partptr = batch_list[i].partptr.cpu().numpy()
-            num_parts = len(partptr) - 1
-            batch_num_parts.extend([num_parts] * num_sample_config)
-            segment_to_train = np.random.randint(num_parts)
-            segments_to_train.append(segment_to_train)
+        t0 = time.time()
+        if isinstance(batch, Batch):
+            batch.to(torch.device(cfg.device))
+            true = batch.y
+            batch_list = batch.to_data_list()
+            (
+                batch_train_list,
+                batch_other,
+                batch_num_parts,
+                segments_to_train,
+            ) = batch_sample_graph_segs(batch_list, sampled_idx, emb_table)
+        else:
+            (   
+                batch_obj,
+                batch_train_list,
+                batch_num_parts,
+                segments_to_train,
+            ) = batch
             
-            for j in range(num_parts):
-                start = int(partptr[j])
-                length = int(partptr[j + 1]) - start
-
-                N, E = batch_list[i].num_nodes, batch_list[i].num_edges
-                data = copy.copy(batch_list[i])
-                del data.num_nodes
-                adj, data.adj = data.adj, None
-
-                adj = adj.narrow(0, start, length).narrow(1, start, length)
-                edge_idx = adj.storage.value()
-
-                for key, item in data:
-                    if isinstance(item, torch.Tensor) and item.size(0) == N:
-                        data[key] = item.narrow(0, start, length)
-                    elif isinstance(item, torch.Tensor) and item.size(0) == E:
-                        data[key] = item[edge_idx]
-                    else:
-                        data[key] = item
-
-                row, col, _ = adj.coo()
-                data.edge_index = torch.stack([row, col], dim=0)
-                if j == segment_to_train:
-                    for k in range(len(data.y)):
-                        unfold_g = Data(
-                            edge_index=data.edge_index,
-                            op_feats=data.op_feats,
-                            op_code=data.op_code,
-                            config_feats=data.config_feats_full[:, k, :], 
-                            num_nodes=length,
-                        )
-                        batch_train_list.append(unfold_g)
-                else:
-                    for k in range(len(data.y)):
-                        batch_other.append(
-                            emb_table.pull(
-                                batch_list[i].partition_idx.cpu() + num_parts * sampled_idx[k] + j
-                            )
-                        )
+            batch_obj.to(torch.device(cfg.device))
+            true = batch_obj.y
+            batch_list = batch_obj.to_data_list()
+            batch_other = cached_node_embed(batch_list, sampled_idx, segments_to_train, emb_table)
         
+        td0 = time.time() - t0
+        t1 = time.time()
+
         batch_train = Batch.from_data_list(batch_train_list)
         batch_train = batch_train.to(torch.device(cfg.device))
         true = true.to(torch.device(cfg.device))
@@ -162,6 +220,8 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
             if i == module_len - 1:
                 graph_embed = module.layer_post_mp(graph_embed)
         
+        td1 = time.time() - t1
+        t2 = time.time()
 
         binomial = torch.distributions.binomial.Binomial(probs=0.5)
         if batch_other:
@@ -200,6 +260,11 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred_score.detach().to('cpu', non_blocking=True)
         loss.backward()
+
+        td2 = time.time() - t2
+        td = time.time() - t0
+        toms = lambda f: f"{f * 1000:.2f} ms"
+        print(toms(td0), toms(td1), toms(td2), toms(td))
         
         # Parameters update after accumulating gradients for given num. batches.
         if ((iter + 1) % batch_accumulation == 0) or (iter + 1 == len(loader)):
