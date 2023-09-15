@@ -44,7 +44,8 @@ def pairwise_hinge_loss(pred, true):
 
 def preprocess_batch(batch, model, num_sample_configs):
     
-    batch_list = batch.to_data_list()
+    # batch_list = batch.to_data_list()
+    batch_list = batch
     processed_batch_list = []
     for g in batch_list:
         sample_idx = torch.randint(0, g.num_config.item(), (num_sample_configs,))
@@ -72,7 +73,8 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
     num_sample_config = 32
     
     for iter, batch in enumerate(loader):
-        batch, sampled_idx = preprocess_batch(batch, model, num_sample_config)
+        # batch, sampled_idx = preprocess_batch(batch, model, num_sample_config)
+        batch, sampled_idx = batch
         batch.to(torch.device(cfg.device))
         true = batch.y
         
@@ -230,7 +232,8 @@ def eval_epoch(logger, loader, model, split='val'):
     time_start = time.time()
     num_sample_config = 32
     for batch in loader:
-        batch, _ = preprocess_batch(batch, model, num_sample_config)
+        # batch, _ = preprocess_batch(batch, model, num_sample_config)
+        batch, _  = batch
         batch.split = split
         true = batch.y
         batch_list = batch.to_data_list()

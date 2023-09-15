@@ -1,7 +1,8 @@
 out_dir: tests/results
+num_workers: 4
 dataset:
-  name: TPUGraphs
-  format: PyG-TPUGraphs
+  name: TPUGraphsNpz
+  format: PyG-TPUGraphsNpz
   task: graph
   task_type: ranking
   transductive: False
