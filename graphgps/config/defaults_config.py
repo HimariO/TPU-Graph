@@ -37,3 +37,6 @@ def extended_cfg(cfg):
 
     cfg.dataset.source = 'nlp'
     cfg.dataset.search = 'random'
+    cfg.dataset.num_sample_config = 32
+
+    cfg.debug = False

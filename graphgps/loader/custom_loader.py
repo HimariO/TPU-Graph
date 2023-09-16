@@ -97,15 +97,10 @@ def batch_sample_graph_segs(batch: Batch, num_sample_config=32):
                         num_nodes=length,
                     )
                     batch_train_list.append(unfold_g)
-            # else:
-            #     for k in range(len(data.y)):
-            #         batch_other.append(
-            #             emb_table.pull(
-            #                 batch_list[i].partition_idx.cpu() + num_parts * sampled_idx[k] + j
-            #             )
-            #         )
+
     return (
         batch,
+        batch_list,
         batch_train_list,
         # batch_other,
         batch_num_parts,
@@ -147,7 +142,15 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
 
 def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
     if sampler == "full_batch" or len(dataset) > 1:
-        collate_fn = partial(preprocess_batch, train_graph_segment=True) if train else preprocess_batch
+        collate_fn = (
+            partial(
+                preprocess_batch,
+                train_graph_segment=True,
+                num_sample_configs=cfg.dataset.num_sample_config
+            ) 
+            if train 
+            else preprocess_batch
+        )
         loader_train = DataLoader(dataset, batch_size=batch_size,
                                   shuffle=shuffle, num_workers=cfg.num_workers,
                                   pin_memory=True, collate_fn=collate_fn)

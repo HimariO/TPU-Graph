@@ -1,5 +1,6 @@
 out_dir: tests/results
 num_workers: 4
+num_threads: 16
 dataset:
   name: TPUGraphsNpz
   format: PyG-TPUGraphsNpz
@@ -12,7 +13,7 @@ dataset:
 train:
   mode: custom_tpu
   batch_size: 2
-  eval_period: 1
+  eval_period: 8
   ckpt_period: 100
   sampler: full_batch
 model:

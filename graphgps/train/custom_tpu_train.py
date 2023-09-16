@@ -156,7 +156,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
     model.train()
     optimizer.zero_grad()
     time_start = time.time()
-    num_sample_config = 32
+    num_sample_config = cfg.dataset.num_sample_config  # TODO: put this parameter into cfg
     
     for iter, batch in enumerate(loader):
         # batch, sampled_idx = preprocess_batch(batch, model, num_sample_config)
@@ -172,10 +172,14 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
                 batch_other,
                 batch_num_parts,
                 segments_to_train,
-            ) = batch_sample_graph_segs(batch_list, sampled_idx, emb_table)
+            ) = batch_sample_graph_segs(
+                batch_list, sampled_idx, emb_table, 
+                num_sample_config=num_sample_config
+            )
         else:
             (   
                 batch_obj,
+                batch_list,
                 batch_train_list,
                 batch_num_parts,
                 segments_to_train,
@@ -183,7 +187,6 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
             
             batch_obj.to(torch.device(cfg.device))
             true = batch_obj.y
-            batch_list = batch_obj.to_data_list()
             batch_other = cached_node_embed(batch_list, sampled_idx, segments_to_train, emb_table)
         
         td0 = time.time() - t0
@@ -264,7 +267,8 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
         td2 = time.time() - t2
         td = time.time() - t0
         toms = lambda f: f"{f * 1000:.2f} ms"
-        print(toms(td0), toms(td1), toms(td2), toms(td))
+        if cfg.debug:
+            print(toms(td0), toms(td1), toms(td2), toms(td))
         
         # Parameters update after accumulating gradients for given num. batches.
         if ((iter + 1) % batch_accumulation == 0) or (iter + 1 == len(loader)):

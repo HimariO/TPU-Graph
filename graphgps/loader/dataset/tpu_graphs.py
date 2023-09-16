@@ -123,6 +123,7 @@ class TPUGraphsNpz(Dataset):
         self.thres = thres
         self.source = source
         self.search = search
+        self.epoch_multiply = 1
         super().__init__(root, transform, pre_transform, pre_filter)
         self.op_feat_mean_std
         self.data = Data(
@@ -215,9 +216,11 @@ class TPUGraphsNpz(Dataset):
         torch.save(split_dict, self.processed_paths[-1])
 
     def len(self):
-        return len(self.processed_file_names) - 1
+        n = len(self.processed_file_names) - 1
+        return n * self.epoch_multiply
 
     def get(self, idx):
+        idx %= len(self.processed_file_names) - 1
         data = torch.load(osp.join(self.processed_dir, f'data_{idx}.pt'))
         op_feats_mean, op_feats_std = self.op_feat_mean_std
         data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
