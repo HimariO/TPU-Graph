@@ -239,9 +239,13 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
             batch_other_embed = torch.zeros_like(graph_embed)
             part_cnt = 0
             for i, num_parts in enumerate(batch_num_parts):
-                for j in range(num_parts-1):
-                    batch_other_embed[i, :] += batch_other[part_cnt, :]
-                    part_cnt += 1
+                m = num_parts - 1
+                batch_other_embed[i, :] += torch.sum(
+                    batch_other[part_cnt: part_cnt + m, :],
+                    dim=0, 
+                    keepdim=False
+                )
+                part_cnt += m
             batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
             batch_num_parts = batch_num_parts.view(-1, 1)
             multiplier_num = (batch_num_parts - 1)/ 2 + 1
@@ -309,11 +313,12 @@ def eval_epoch(logger, loader, model, split='val'):
         batch_seg = []
         batch_num_parts = []
         for i in range(len(batch_list)):
-            num_parts = len(batch_list[i].partptr) - 1
+            partptr = batch_list[i].partptr.cpu().numpy()
+            num_parts = len(partptr) - 1
             batch_num_parts.append(num_parts)
             for j in range(num_parts):
-                start = int(batch_list[i].partptr.numpy()[j])
-                length = int(batch_list[i].partptr.numpy()[j+1]) - start
+                start = int(partptr[j])
+                length = int(partptr[j + 1]) - start
 
                 N, E = batch_list[i].num_nodes, batch_list[i].num_edges
                 data = copy.copy(batch_list[i])

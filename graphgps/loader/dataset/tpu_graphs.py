@@ -85,7 +85,7 @@ class TPUGraphs(InMemoryDataset):
                     num_nodes = torch.tensor(np_file["node_feat"].shape[0])
                     num_parts = num_nodes // self.thres + 1
                     interval = num_nodes // num_parts
-                    partptr = torch.arange(0, num_nodes, interval+1)
+                    partptr = torch.arange(0, num_nodes, interval+1)  # global id of the graph segments
                     if partptr[-1] != num_nodes:
                         partptr = torch.cat([partptr, torch.tensor([num_nodes])])
                     
@@ -145,7 +145,8 @@ class TPUGraphsNpz(Dataset):
     def op_feat_mean_std(self):
         if not hasattr(self, "_op_feat_mean_std"):
             op_feats = []
-            for path in self.processed_paths:
+            print('Computing op_feat_mean_std...')
+            for path in tqdm(self.processed_paths):
                 data = torch.load(path)
                 if isinstance(data, Data):
                     op_feats.append(data.op_feats)
