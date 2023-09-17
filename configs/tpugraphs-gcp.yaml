@@ -1,9 +1,9 @@
-out_dir: tests/results
-num_workers: 4
+out_dir: tests/results-xla-random
+num_workers: 8
 num_threads: 16
-debug: true
+debug: false
 wandb:
-  use: false
+  use: true
   entity: togglec
   project: tpu-graph
 dataset:
@@ -12,15 +12,17 @@ dataset:
   task: graph
   task_type: ranking
   transductive: False
-  dir: /home/ron/Projects/TPU-Graph/datasets/
+  dir: /home/ron_zhu/TPU-Graph/datasets/
   source: xla
-  search: default
+  search: random
+  num_sample_config:  32
 train:
   mode: custom_tpu
-  batch_size: 2
+  batch_size: 4
   eval_period: 8
   ckpt_period: 100
   sampler: full_batch
+  auto_resume: true
 model:
   type: custom_tpu_gnn
   loss_fun: cross_entropy
