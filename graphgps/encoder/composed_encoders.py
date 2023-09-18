@@ -138,3 +138,9 @@ for ds_enc_name, ds_enc_cls in ds_encs.items():
         concat_node_encoders([ds_enc_cls, SignNetNodeEncoder, RWSENodeEncoder],
                              ['SignNet', 'RWSE'])
     )
+
+register_node_encoder(
+    f"SignNet+RWSE",
+    concat_node_encoders([SignNetNodeEncoder, RWSENodeEncoder],
+                            ['SignNet', 'RWSE'])
+)

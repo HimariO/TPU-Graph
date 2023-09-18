@@ -34,6 +34,9 @@ class KernelPENodeEncoder(torch.nn.Module):
         dim_in = cfg.share.dim_in  # Expected original input node features dim
 
         pecfg = getattr(cfg, f"posenc_{self.kernel_type}")
+        if pecfg.kernel.times_func:
+            pecfg.kernel.times = list(eval(pecfg.kernel.times_func))
+        
         dim_pe = pecfg.dim_pe  # Size of the kernel-based PE embedding
         num_rw_steps = len(pecfg.kernel.times)
         model_type = pecfg.model.lower()  # Encoder NN model type for PEs

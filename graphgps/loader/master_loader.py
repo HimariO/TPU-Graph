@@ -8,6 +8,7 @@ import torch
 import torch_geometric.transforms as T
 from numpy.random import default_rng
 from ogb.graphproppred import PygGraphPropPredDataset
+from torch_geometric.data import InMemoryDataset
 from torch_geometric.datasets import (GNNBenchmarkDataset, Planetoid, TUDataset,
                                       WikipediaNetwork, ZINC)
 from torch_geometric.graphgym.config import cfg
@@ -95,6 +96,20 @@ def load_dataset_master(format, name, dataset_dir):
     Returns:
         PyG dataset object with applied perturbation transforms and data splits
     """
+
+    # Precompute necessary statistics for positional encodings.
+    pe_enabled_list = []
+    for key, pecfg in cfg.items():
+        if key.startswith('posenc_') and pecfg.enable:
+            pe_name = key.split('_', 1)[1]
+            pe_enabled_list.append(pe_name)
+            if hasattr(pecfg, 'kernel'):
+                # Generate kernel times if functional snippet is set.
+                if pecfg.kernel.times_func:
+                    pecfg.kernel.times = list(eval(pecfg.kernel.times_func))
+                logging.info(f"Parsed {pe_name} PE kernel times / steps: "
+                             f"{pecfg.kernel.times}")
+
     if format.startswith('PyG-'):
         pyg_dataset_id = format.split('-', 1)[1]
         dataset_dir = osp.join(dataset_dir, pyg_dataset_id)
@@ -112,7 +127,15 @@ def load_dataset_master(format, name, dataset_dir):
             dataset = preformat_TPUGraphs(dataset_dir)
         
         elif pyg_dataset_id == 'TPUGraphsNpz':
-            dataset = preformat_TPUGraphsNpz(dataset_dir)
+            # is_undirected = all(d.is_undirected() for d in dataset[:10])
+            is_undirected = False
+            posenc_stats_fn = partial(
+                compute_posenc_stats,
+                pe_types=pe_enabled_list,
+                is_undirected=is_undirected,
+                cfg=cfg
+            )
+            dataset = preformat_TPUGraphsNpz(dataset_dir, pre_transforms=posenc_stats_fn)
 
         elif pyg_dataset_id == 'Planetoid':
             dataset = Planetoid(dataset_dir, name)
@@ -162,36 +185,30 @@ def load_dataset_master(format, name, dataset_dir):
         raise ValueError(f"Unknown data format: {format}")
     log_loaded_dataset(dataset, format, name)
 
-    # Precompute necessary statistics for positional encodings.
-    pe_enabled_list = []
-    for key, pecfg in cfg.items():
-        if key.startswith('posenc_') and pecfg.enable:
-            pe_name = key.split('_', 1)[1]
-            pe_enabled_list.append(pe_name)
-            if hasattr(pecfg, 'kernel'):
-                # Generate kernel times if functional snippet is set.
-                if pecfg.kernel.times_func:
-                    pecfg.kernel.times = list(eval(pecfg.kernel.times_func))
-                logging.info(f"Parsed {pe_name} PE kernel times / steps: "
-                             f"{pecfg.kernel.times}")
-    if pe_enabled_list:
+    if pe_enabled_list and isinstance(dataset, InMemoryDataset):
         start = time.perf_counter()
         logging.info(f"Precomputing Positional Encoding statistics: "
-                     f"{pe_enabled_list} for all graphs...")
+                    f"{pe_enabled_list} for all graphs...")
         # Estimate directedness based on 10 graphs to save time.
         is_undirected = all(d.is_undirected() for d in dataset[:10])
         logging.info(f"  ...estimated to be undirected: {is_undirected}")
+        posenc_stats_fn = partial(
+            compute_posenc_stats,
+            pe_types=pe_enabled_list,
+            is_undirected=is_undirected,
+            cfg=cfg
+        )
         pre_transform_in_memory(dataset,
-                                partial(compute_posenc_stats,
-                                        pe_types=pe_enabled_list,
-                                        is_undirected=is_undirected,
-                                        cfg=cfg),
+                                posenc_stats_fn,
                                 show_progress=True
                                 )
         elapsed = time.perf_counter() - start
         timestr = time.strftime('%H:%M:%S', time.gmtime(elapsed)) \
-                  + f'{elapsed:.2f}'[-3:]
+                + f'{elapsed:.2f}'[-3:]
         logging.info(f"Done! Took {timestr}")
+    else:
+        # raise NotImplementedError("Not implemented postional encoding pre-transform for file-base dataset!")
+        logging.warning("Not implemented postional encoding pre-transform for file-base dataset!")
 
     # Set standard dataset train/val/test splits
     if hasattr(dataset, 'split_idxs'):
@@ -337,12 +354,13 @@ def preformat_TPUGraphs(dataset_dir):
 
     return dataset
 
-def preformat_TPUGraphsNpz(dataset_dir):
+def preformat_TPUGraphsNpz(dataset_dir, pre_transforms=None):
    
     dataset = TPUGraphsNpz(
         dataset_dir, 
         source=cfg.dataset.get('source', 'nlp'),
         search=cfg.dataset.get('search', 'random'),
+        pre_transform=pre_transforms,
     )
     dataset.name = 'TPUGraphsNpz'
     

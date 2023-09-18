@@ -107,6 +107,12 @@ class TPUGraphs(InMemoryDataset):
 
 
 class TPUGraphsNpz(Dataset):
+
+    KEYS = [
+        'num_config_idx', 'pestat_RWSE', 'edge_index', 'config_feats', 
+        'num_config', 'eigvecs_sn', 'config_idx', 'op_feats', 'y', 
+        'num_nodes', 'partptr', 'partition_idx', 'op_code', 'eigvals_sn'
+    ]
     
     def __init__(
           self, 
@@ -169,8 +175,8 @@ class TPUGraphsNpz(Dataset):
 
     @property
     def processed_file_names(self):
-        files = [f'data_{i}.pt' for i in range(len(self.raw_file_names))]
-        files.append('split_dict.pt')
+        files = [f'{self.source}_{self.search}_data_{i}.pt' for i in range(len(self.raw_file_names))]
+        files.append(f'{self.source}_{self.search}_split_dict.pt')
         return files
 
     # def download(self):
@@ -183,8 +189,15 @@ class TPUGraphsNpz(Dataset):
         parts_cnt = 0
         
         for idx, raw_path in enumerate(tqdm(self.raw_paths)):
+            out_path = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt')
             split_name = osp.basename(osp.dirname(raw_path))
             split_dict[split_name].append(idx)
+
+            if osp.exists(out_path):
+                old_data = torch.load(out_path)
+                if not set(old_data.keys).symmetric_difference(set(self.KEYS)):
+                    print("SKIP ", out_path)
+                    continue
             
             np_file = dict(np.load(raw_path))
             if "edge_index" not in np_file:
@@ -203,7 +216,7 @@ class TPUGraphsNpz(Dataset):
             num_nodes = torch.tensor(np_file["node_feat"].shape[0])
             num_parts = num_nodes // self.thres + 1
             interval = num_nodes // num_parts
-            partptr = torch.arange(0, num_nodes, interval+1)
+            partptr = torch.arange(0, num_nodes, interval+1)  # TODO: Find a better way to partition graph according to topologic 
             if partptr[-1] != num_nodes:
                 partptr = torch.cat([partptr, torch.tensor([num_nodes])])
             
@@ -212,8 +225,11 @@ class TPUGraphsNpz(Dataset):
                         num_config=num_config, num_config_idx=num_config_idx, y=runtime, 
                         num_nodes=num_nodes, partptr=partptr, partition_idx = parts_cnt)
             
+            if self.pre_transform is not None:
+                data = self.pre_transform(data)
+            
             parts_cnt += num_parts * num_config
-            torch.save(data, osp.join(self.processed_dir, f'data_{idx}.pt'))
+            torch.save(data, out_path)
         torch.save(split_dict, self.processed_paths[-1])
 
     def len(self):
@@ -222,7 +238,9 @@ class TPUGraphsNpz(Dataset):
 
     def get(self, idx):
         idx %= len(self.processed_file_names) - 1
-        data = torch.load(osp.join(self.processed_dir, f'data_{idx}.pt'))
+        data = torch.load(osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt'))
+        if isinstance(data.partition_idx, int):  # HACK: habdle the case that PyGemo not able to convert int to tensor
+            data.partition_idx = torch.tensor(data.partition_idx)
         op_feats_mean, op_feats_std = self.op_feat_mean_std
         data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
         return data

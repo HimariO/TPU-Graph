@@ -1,5 +1,5 @@
 out_dir: tests/results
-num_workers: 4
+num_workers: 0
 num_threads: 16
 debug: true
 wandb:
@@ -14,7 +14,7 @@ dataset:
   transductive: False
   dir: /home/ron/Projects/TPU-Graph/datasets/
   source: xla
-  search: default
+  search: random
 train:
   mode: custom_tpu
   batch_size: 2
