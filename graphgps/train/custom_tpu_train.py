@@ -305,7 +305,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
 def eval_epoch(logger, loader, model, split='val'):
     model.eval()
     time_start = time.time()
-    num_sample_config = 32
+    num_sample_config = cfg.dataset.num_sample_config
     for batch in loader:
         # batch, _ = preprocess_batch(batch, model, num_sample_config)
         batch, _  = batch
@@ -348,6 +348,9 @@ def eval_epoch(logger, loader, model, split='val'):
                         config_feats=data.config_feats_full[:, k, :], 
                         num_nodes=length
                     )
+                    for k in data.keys:
+                        if k not in unfold_g.keys:
+                            setattr(unfold_g, k, getattr(data, k))
                     batch_seg.append(unfold_g)
         
         batch_seg = Batch.from_data_list(batch_seg)
@@ -455,12 +458,18 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
     emb_table = History(500000000, 1)
     for cur_epoch in range(start_epoch, cfg.optim.max_epoch):
         start_time = time.perf_counter()
+        # for i in range(1, num_splits):
+        #     eval_epoch(loggers[i], loaders[i], model,
+        #                 split=split_names[i - 1])
         train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, emb_table,
                     cfg.optim.batch_accumulation)
         perf[0].append(loggers[0].write_epoch(cur_epoch))
 
         if is_eval_epoch(cur_epoch) or first_run_epoch:
             for i in range(1, num_splits):
+                # if i == num_splits - 1:  # HACK: skip test-set
+                #     perf[i].append(perf[i - 1][-1])
+                #     continue
                 eval_epoch(loggers[i], loaders[i], model,
                            split=split_names[i - 1])
                 perf[i].append(loggers[i].write_epoch(cur_epoch))

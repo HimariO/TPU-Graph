@@ -16,7 +16,7 @@ dataset:
   dir: /home/ron/Projects/TPU-Graph/datasets/
   source: xla
   search: random
-  num_sample_config:  32
+  num_sample_config:  4
   node_encoder: True
   node_encoder_name: SignNet+RWSE
   node_encoder_bn: False
@@ -47,7 +47,7 @@ posenc_RWSE:
 train:
   mode: custom_tpu
   batch_size: 1
-  eval_period: 8
+  eval_period: 2
   ckpt_period: 100
   sampler: full_batch
   auto_resume: true

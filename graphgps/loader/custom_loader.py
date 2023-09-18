@@ -140,7 +140,7 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
     processed_batch_list = Batch.from_data_list(processed_batch_list)
     if train_graph_segment:
         return (
-            batch_sample_graph_segs(processed_batch_list), 
+            batch_sample_graph_segs(processed_batch_list, num_sample_config=num_sample_configs), 
             sample_idx
         )
     else:
@@ -155,8 +155,11 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
                 train_graph_segment=True,
                 num_sample_configs=cfg.dataset.num_sample_config
             ) 
-            if train 
-            else preprocess_batch
+            if train else 
+            partial(
+                preprocess_batch,
+                num_sample_configs=cfg.dataset.num_sample_config
+            ) 
         )
         loader_train = DataLoader(dataset, batch_size=batch_size,
                                   shuffle=shuffle, num_workers=cfg.num_workers,
