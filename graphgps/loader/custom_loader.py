@@ -72,15 +72,17 @@ def batch_sample_graph_segs(batch: Batch, num_sample_config=32):
             N, E = batch_list[i].num_nodes, batch_list[i].num_edges
             data = copy.copy(batch_list[i])
             del data.num_nodes
-            adj, data.adj = data.adj, None
+            adj, data.adj = data.adj, None  # adj is a SparseTensor
 
             adj = adj.narrow(0, start, length).narrow(1, start, length)
             edge_idx = adj.storage.value()
 
             for key, item in data:
                 if isinstance(item, torch.Tensor) and item.size(0) == N:
+                    # get subset of node features
                     data[key] = item.narrow(0, start, length)
                 elif isinstance(item, torch.Tensor) and item.size(0) == E:
+                    # get subset of edge features
                     data[key] = item[edge_idx]
                 else:
                     data[key] = item
@@ -88,6 +90,7 @@ def batch_sample_graph_segs(batch: Batch, num_sample_config=32):
             row, col, _ = adj.coo()
             data.edge_index = torch.stack([row, col], dim=0)
             if j == segment_to_train:
+                # create same graph-segment for each layout config
                 for k in range(len(data.y)):
                     unfold_g = Data(
                         edge_index=data.edge_index,
@@ -96,6 +99,10 @@ def batch_sample_graph_segs(batch: Batch, num_sample_config=32):
                         config_feats=data.config_feats_full[:, k, :], 
                         num_nodes=length,
                     )
+
+                    for k in data.keys:
+                        if k not in unfold_g.keys:
+                            setattr(unfold_g, k, getattr(data, k))
                     batch_train_list.append(unfold_g)
 
     return (
@@ -129,7 +136,7 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
         g.config_feats_full[g.config_idx, ...] += g.config_feats
         g.adj = SparseTensor(row=g.edge_index[0], col=g.edge_index[1], sparse_sizes=(g.num_nodes, g.num_nodes))
         processed_batch_list.append(g)
-    
+    # breakpoint()
     processed_batch_list = Batch.from_data_list(processed_batch_list)
     if train_graph_segment:
         return (

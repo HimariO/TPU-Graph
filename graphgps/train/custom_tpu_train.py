@@ -15,6 +15,7 @@ from torch_geometric.graphgym.register import register_train
 from torch_geometric.graphgym.utils.epoch import is_eval_epoch, is_ckpt_epoch
 from torch_geometric.data import Data
 from torch_sparse import SparseTensor
+from loguru import logger
 
 from graphgps.loss.subtoken_prediction_loss import subtoken_cross_entropy
 from graphgps.utils import cfg_to_dict, flatten_dict, make_wandb_name
@@ -152,11 +153,12 @@ def cached_node_embed(
     return batch_other
     
 
+@logger.catch(reraise=True)
 def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History, batch_accumulation: int):
     model.train()
     optimizer.zero_grad()
     time_start = time.time()
-    num_sample_config = cfg.dataset.num_sample_config  # TODO: put this parameter into cfg
+    num_sample_config = cfg.dataset.num_sample_config  # number of configs per graph
     
     for iter, batch in enumerate(loader):
         # batch, sampled_idx = preprocess_batch(batch, model, num_sample_config)
@@ -194,7 +196,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
 
         batch_train = Batch.from_data_list(batch_train_list)
         batch_train = batch_train.to(torch.device(cfg.device))
-        true = true.to(torch.device(cfg.device))
+        true = true.to(torch.device(cfg.device))  # (batch_size * num_sample,)
         """
         concat node features & linear project to lower dim
         """
@@ -202,7 +204,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
         batch_train.op_emb = model.emb(batch_train.op_code.long())
         batch_train.x = torch.cat([
             batch_train.op_feats, 
-            batch_train.op_emb * model.op_weights, 
+            batch_train.op_emb * model.op_weights,   # TODO: create a per op version of op_weights
             batch_train.config_feats * model.config_weights
         ], dim=-1)
         batch_train.x = model.linear_map(batch_train.x)
@@ -210,14 +212,14 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
         """
         Inference on sampled graph segments
         """
-        custom_gnn = model.model.model
+        custom_gnn = model.model.model  # TPUModel.GraphGymModule.GNN
         module_len = len(list(custom_gnn.children()))
         for i, module in enumerate(custom_gnn.children()):
             if i < module_len - 1:
                 batch_train = module(batch_train)
             if i == module_len - 1:
                 batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) \
-                    + tnn.global_mean_pool(batch_train.x, batch_train.batch)
+                                  + tnn.global_mean_pool(batch_train.x, batch_train.batch)
         graph_embed = batch_train_embed / torch.norm(batch_train_embed, dim=-1, keepdim=True)
         for i, module in enumerate(custom_gnn.children()):
             if i == module_len - 1:
@@ -421,6 +423,8 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
         scheduler: PyTorch learning rate scheduler
 
     """
+    # BUG: if resume from non-eval-epoch perf[i] will be empty, use this var to force eval.
+    first_run_epoch = True
     start_epoch = 0
     model = model.to(cfg.device)
     if cfg.train.auto_resume:
@@ -455,7 +459,7 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
                     cfg.optim.batch_accumulation)
         perf[0].append(loggers[0].write_epoch(cur_epoch))
 
-        if is_eval_epoch(cur_epoch):
+        if is_eval_epoch(cur_epoch) or first_run_epoch:
             for i in range(1, num_splits):
                 eval_epoch(loggers[i], loaders[i], model,
                            split=split_names[i - 1])
@@ -464,6 +468,7 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
             for i in range(1, num_splits):
                 perf[i].append(perf[i][-1])
 
+        first_run_epoch = False
         val_perf = perf[1]
         if cfg.optim.scheduler == 'reduce_on_plateau':
             scheduler.step(val_perf[-1]['loss'])
