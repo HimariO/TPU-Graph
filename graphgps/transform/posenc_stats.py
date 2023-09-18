@@ -69,6 +69,10 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg):
             evals=evals, evects=evects,
             max_freqs=max_freqs,
             eigvec_norm=eigvec_norm)
+    
+    vram_30gb = 30 * 2**30
+    vram = torch.cuda.mem_get_info()
+    use_cuda = vram and vram[1] >= vram_30gb
 
     if 'SignNet' in pe_types:
         # Eigen-decomposition with numpy for SignNet.
@@ -76,10 +80,22 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg):
         if norm_type == 'none':
             norm_type = None
         L = to_scipy_sparse_matrix(
-            *get_laplacian(undir_edge_index, normalization=norm_type,
-                           num_nodes=N)
+            *get_laplacian(
+                undir_edge_index, 
+                normalization=norm_type,
+                num_nodes=N
+            )
         )
-        evals_sn, evects_sn = np.linalg.eigh(L.toarray())
+        
+        if use_cuda:
+            Ls = torch.tensor(L.toarray(), device='cuda', dtype=torch.float32)
+            evals_sn, evects_sn = torch.linalg.eigh(Ls)
+            evals_sn = evals_sn.cpu().float().numpy()
+            evects_sn = evects_sn.cpu().float().numpy()
+            torch.cuda.empty_cache()
+        else:
+            evals_sn, evects_sn = np.linalg.eigh(L.toarray())
+        
         data.eigvals_sn, data.eigvecs_sn = get_lap_decomp_stats(
             evals=evals_sn, evects=evects_sn,
             max_freqs=cfg.posenc_SignNet.eigen.max_freqs,
@@ -90,10 +106,13 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg):
         kernel_param = cfg.posenc_RWSE.kernel
         if len(kernel_param.times) == 0:
             raise ValueError("List of kernel times required for RWSE")
+        edge_index = data.edge_index
+        if use_cuda: edge_index = edge_index.to('cuda')
         rw_landing = get_rw_landing_probs(ksteps=kernel_param.times,
-                                          edge_index=data.edge_index,
+                                          edge_index=edge_index,
                                           num_nodes=N)
-        data.pestat_RWSE = rw_landing
+        if use_cuda: torch.cuda.empty_cache()
+        data.pestat_RWSE = rw_landing.cpu()
 
     # Heat Kernels.
     if 'HKdiagSE' in pe_types or 'HKfullPE' in pe_types:
@@ -137,7 +156,7 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg):
     return data
 
 
-def get_lap_decomp_stats(evals, evects, max_freqs, eigvec_norm='L2'):
+def get_lap_decomp_stats(evals, evects, max_freqs, eigvec_norm='L2', device='cpu'):
     """Compute Laplacian eigen-decomposition-based PE stats of the given graph.
 
     Args:
@@ -153,10 +172,10 @@ def get_lap_decomp_stats(evals, evects, max_freqs, eigvec_norm='L2'):
     # Keep up to the maximum desired number of frequencies.
     idx = evals.argsort()[:max_freqs]
     evals, evects = evals[idx], np.real(evects[:, idx])
-    evals = torch.from_numpy(np.real(evals)).clamp_min(0)
+    evals = torch.from_numpy(np.real(evals)).clamp_min(0).to(device)
 
     # Normalize and pad eigen vectors.
-    evects = torch.from_numpy(evects).float()
+    evects = torch.from_numpy(evects).float().to(device)
     evects = eigvec_normalizer(evects, evals, normalization=eigvec_norm)
     if N < max_freqs:
         EigVecs = F.pad(evects, (0, max_freqs - N), value=float('nan'))
