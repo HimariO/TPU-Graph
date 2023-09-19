@@ -15,6 +15,7 @@ from torch_geometric.graphgym.register import register_train
 from torch_geometric.graphgym.utils.epoch import is_eval_epoch, is_ckpt_epoch
 from torch_geometric.data import Data
 from torch_sparse import SparseTensor
+from tqdm import tqdm
 from loguru import logger
 
 from graphgps.loss.subtoken_prediction_loss import subtoken_cross_entropy
@@ -306,7 +307,11 @@ def eval_epoch(logger, loader, model, split='val'):
     model.eval()
     time_start = time.time()
     num_sample_config = cfg.dataset.eval_num_sample_config
-    for batch in loader:
+    
+    loader_bar = tqdm(loader)
+    loader_bar.set_description_str('Eval Epoch')
+    
+    for batch in loader_bar:
         # batch, _ = preprocess_batch(batch, model, num_sample_config)
         batch, _  = batch
         batch.split = split
@@ -314,6 +319,7 @@ def eval_epoch(logger, loader, model, split='val'):
         batch_list = batch.to_data_list()
         batch_seg = []
         batch_num_parts = []
+        
         for i in range(len(batch_list)):
             partptr = batch_list[i].partptr.cpu().numpy()
             num_parts = len(partptr) - 1
@@ -357,7 +363,6 @@ def eval_epoch(logger, loader, model, split='val'):
             nonlocal model
             batch_seg = Batch.from_data_list(batch_seg)  # (batch_size * sum(num_segments[i], * num_config,)
             batch_seg.to(torch.device(cfg.device))
-            true = true.to(torch.device(cfg.device))
             # more preprocessing
             # batch_train.config_feats = model.config_feats_transform(batch_train.config_feats)
             batch_seg.op_emb = model.emb(batch_seg.op_code.long())
@@ -388,12 +393,15 @@ def eval_epoch(logger, loader, model, split='val'):
         
         res = []
         batch_graphs = cfg.train.batch_size * min(32, cfg.dataset.num_sample_config)
-        for i in range(0, len(batch_seg), batch_graphs):
+        inference_bar = tqdm(range(0, len(batch_seg), batch_graphs))
+        inference_bar.set_description_str('Partial Batch Inferece')
+        for i in inference_bar:
             res.append(
                 partial_inference(batch_seg[i: i + batch_graphs])
             )
         res = torch.cat(res, dim=0)
         
+        true = true.to(torch.device(cfg.device))
         pred = torch.zeros([len(batch_list), len(data.y), 1]).to(torch.device(cfg.device))
         part_cnt = 0
         for i, num_parts in enumerate(batch_num_parts):
@@ -479,9 +487,9 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
 
         if is_eval_epoch(cur_epoch) or first_run_epoch:
             for i in range(1, num_splits):
-                # if i == num_splits - 1:  # HACK: skip test-set
-                #     perf[i].append(perf[i - 1][-1])
-                #     continue
+                if i == num_splits - 1:  # HACK: skip test-set
+                    perf[i].append(perf[i - 1][-1])
+                    continue
                 eval_epoch(loggers[i], loaders[i], model,
                            split=split_names[i - 1])
                 perf[i].append(loggers[i].write_epoch(cur_epoch))

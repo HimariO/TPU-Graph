@@ -16,10 +16,11 @@ dataset:
   source: xla
   search: random
   num_sample_config:  32
+  eval_num_sample_config: 256
 train:
   mode: custom_tpu
   batch_size: 4
-  eval_period: 8
+  eval_period: 64
   ckpt_period: 100
   sampler: full_batch
   auto_resume: true
