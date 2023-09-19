@@ -158,7 +158,7 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
             if train else 
             partial(
                 preprocess_batch,
-                num_sample_configs=cfg.dataset.num_sample_config
+                num_sample_configs=cfg.dataset.eval_num_sample_config
             ) 
         )
         loader_train = DataLoader(dataset, batch_size=batch_size,

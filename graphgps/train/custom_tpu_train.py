@@ -305,7 +305,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
 def eval_epoch(logger, loader, model, split='val'):
     model.eval()
     time_start = time.time()
-    num_sample_config = cfg.dataset.num_sample_config
+    num_sample_config = cfg.dataset.eval_num_sample_config
     for batch in loader:
         # batch, _ = preprocess_batch(batch, model, num_sample_config)
         batch, _  = batch
@@ -352,36 +352,48 @@ def eval_epoch(logger, loader, model, split='val'):
                         if k not in unfold_g.keys:
                             setattr(unfold_g, k, getattr(data, k))
                     batch_seg.append(unfold_g)
+
+        def partial_inference(batch_seg: List[Data]) -> torch.Tensor:
+            nonlocal model
+            batch_seg = Batch.from_data_list(batch_seg)  # (batch_size * sum(num_segments[i], * num_config,)
+            batch_seg.to(torch.device(cfg.device))
+            true = true.to(torch.device(cfg.device))
+            # more preprocessing
+            # batch_train.config_feats = model.config_feats_transform(batch_train.config_feats)
+            batch_seg.op_emb = model.emb(batch_seg.op_code.long())
+            # batch_train.op_feats = model.op_feats_transform(batch_train.op_feats)
+            batch_seg.x = torch.cat(
+                [
+                    batch_seg.op_feats, 
+                    model.op_weights * batch_seg.op_emb, 
+                    batch_seg.config_feats * model.config_weights
+                ], 
+                dim=-1
+            )
+            batch_seg.x = model.linear_map(batch_seg.x)
         
-        batch_seg = Batch.from_data_list(batch_seg)
-        batch_seg.to(torch.device(cfg.device))
-        true = true.to(torch.device(cfg.device))
-        # more preprocessing
-        # batch_train.config_feats = model.config_feats_transform(batch_train.config_feats)
-        batch_seg.op_emb = model.emb(batch_seg.op_code.long())
-        # batch_train.op_feats = model.op_feats_transform(batch_train.op_feats)
-        batch_seg.x = torch.cat(
-            [
-                batch_seg.op_feats, 
-                model.op_weights * batch_seg.op_emb, 
-                batch_seg.config_feats * model.config_weights
-            ], 
-            dim=-1
-        )
-        batch_seg.x = model.linear_map(batch_seg.x)
-       
-        custom_gnn = model.model.model
-        module_len = len(list(custom_gnn.children()))
-        for i, module in enumerate(custom_gnn.children()):
-            if i < module_len - 1:
-                batch_seg = module(batch_seg)
-            if i == module_len - 1:
-                batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + \
-                    tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
-        graph_embed = batch_seg_embed / torch.norm(batch_seg_embed, dim=-1, keepdim=True)
-        for i, module in enumerate(custom_gnn.children()):
-            if i == module_len - 1:
-                res = module.layer_post_mp(graph_embed)
+            custom_gnn = model.model.model
+            module_len = len(list(custom_gnn.children()))
+            for i, module in enumerate(custom_gnn.children()):
+                if i < module_len - 1:
+                    batch_seg = module(batch_seg)
+                if i == module_len - 1:
+                    batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + \
+                        tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
+            graph_embed = batch_seg_embed / torch.norm(batch_seg_embed, dim=-1, keepdim=True)
+            for i, module in enumerate(custom_gnn.children()):
+                if i == module_len - 1:
+                    res = module.layer_post_mp(graph_embed)
+            return res
+        
+        res = []
+        batch_graphs = cfg.train.batch_size * min(32, cfg.dataset.num_sample_config)
+        for i in range(0, len(batch_seg), batch_graphs):
+            res.append(
+                partial_inference(batch_seg[i: i + batch_graphs])
+            )
+        res = torch.cat(res, dim=0)
+        
         pred = torch.zeros([len(batch_list), len(data.y), 1]).to(torch.device(cfg.device))
         part_cnt = 0
         for i, num_parts in enumerate(batch_num_parts):
