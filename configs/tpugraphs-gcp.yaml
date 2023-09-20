@@ -1,4 +1,4 @@
-out_dir: tests/results-xla-random
+out_dir: tests/xla-random
 num_workers: 8
 num_threads: 16
 debug: false

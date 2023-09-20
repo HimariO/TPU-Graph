@@ -120,10 +120,19 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
     # batch_list = batch.to_data_list()
     batch_list = batch
     processed_batch_list = []
+    sample_idx = []
     for g in batch_list:
-        sample_idx = torch.randint(0, g.num_config.item(), (num_sample_configs,))
-        g.y = g.y[sample_idx]
-        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx, ...]
+        if train_graph_segment:
+            sample_idx.append(
+                torch.randint(0, g.num_config.item(), (num_sample_configs,))
+            )
+        else:
+            sample_idx.append(
+                torch.arange(0, min(g.num_config.item(), num_sample_configs))
+                # torch.arange(0, num_sample_configs) % g.num_config.item()
+            )
+        g.y = g.y[sample_idx[-1]]
+        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx[-1], ...]
         g.config_feats = g.config_feats.transpose(0,1)
         g.config_feats_full = torch.zeros(
             [

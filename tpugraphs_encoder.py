@@ -187,7 +187,7 @@ class TPUGraphNode(Dataset):
 
 
 def test_dataset():
-    dataset = TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/xla/random/train")
+    dataset = TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/*/*/train")
     data_dict = dataset[0]
     print(data_dict)
     print(data_dict['features'].shape)
@@ -201,6 +201,7 @@ def test_dataset():
         print(batch['op_code'].shape)
         print(batch['features'][0])
         break
+    print("len(dataset): ", len(dataset))
 
 
 def train():
@@ -209,7 +210,7 @@ def train():
 
     model = LitAutoEncoder(feat_dim=(1784 + 128), emb_dim=128)
     
-    train_dataset = TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/xla/random/train")
+    train_dataset = TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/*/*/train")
     val_dataset = TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/xla/random/valid")
     train_loader = DataLoader(
         train_dataset, 
@@ -235,7 +236,7 @@ def train():
         model=model,
         train_dataloaders=train_loader,
         val_dataloaders=val_loader,
-        ckpt_path=None,
+        ckpt_path='lightning_logs/version_5/checkpoints/last.ckpt',
     )
 
 

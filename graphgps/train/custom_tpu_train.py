@@ -2,11 +2,12 @@ import logging
 import time
 import copy
 from typing import *
+from collections import defaultdict
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch_geometric.nn as tnn
+from torch import nn, Tensor
 from torch_geometric.data import Batch
 from torch_geometric.graphgym.checkpoint import load_ckpt, save_ckpt, clean_ckpt
 from torch_geometric.graphgym.config import cfg
@@ -51,10 +52,11 @@ def preprocess_batch(batch, model, num_sample_configs):
     # batch_list = batch.to_data_list()
     batch_list = batch
     processed_batch_list = []
+    sample_idx = []
     for g in batch_list:
-        sample_idx = torch.randint(0, g.num_config.item(), (num_sample_configs,))
-        g.y = g.y[sample_idx]
-        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx, ...]
+        sample_idx.append(torch.randint(0, g.num_config.item(), (num_sample_configs,)))
+        g.y = g.y[sample_idx[-1]]
+        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx[-1], ...]
         g.config_feats = g.config_feats.transpose(0,1)
         g.config_feats_full = torch.zeros(
             [
@@ -119,7 +121,7 @@ def batch_sample_graph_segs(batch_list: List[Data], sampled_idx: torch.Tensor, e
                 for k in range(len(data.y)):
                     batch_other.append(
                         emb_table.pull(
-                            batch_list[i].partition_idx.cpu() + num_parts * sampled_idx[k] + j
+                            batch_list[i].partition_idx.cpu() + num_parts * sampled_idx[i][k] + j
                         )
                     )
     return (
@@ -148,7 +150,7 @@ def cached_node_embed(
             for k in range(len(data.y)):
                 batch_other.append(
                     emb_table.pull(
-                        data.partition_idx.cpu() + num_parts * sampled_idx[k] + j
+                        data.partition_idx.cpu() + num_parts * sampled_idx[i][k] + j
                     )
                 )
     return batch_other
@@ -160,9 +162,8 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
     optimizer.zero_grad()
     time_start = time.time()
     num_sample_config = cfg.dataset.num_sample_config  # number of configs per graph
-    
+
     for iter, batch in enumerate(loader):
-        # batch, sampled_idx = preprocess_batch(batch, model, num_sample_config)
         batch, sampled_idx = batch
         
         t0 = time.time()
@@ -285,12 +286,14 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
             optimizer.zero_grad()
         
         for i in range(graph_embed.shape[0]):
-            push_idx = (
-                batch_list[i // num_sample_config].partition_idx.cpu() + 
-                sampled_idx[i % num_sample_config] * (len(batch_list[i // num_sample_config].partptr) - 1) + 
-                segments_to_train[i // num_sample_config]
+            b = i // num_sample_config  # batch index
+            src_graph = batch_list[b]
+            flat_ind = (
+                src_graph.partition_idx.cpu() + 
+                sampled_idx[b][i % num_sample_config] * (len(src_graph.partptr) - 1) + 
+                segments_to_train[b]
             )
-            emb_table.push(graph_embed[i].cpu(), push_idx)
+            emb_table.push(graph_embed[i].cpu(), flat_ind)
         
         logger.update_stats(true=_true,
                             pred=_pred,
@@ -310,10 +313,14 @@ def eval_epoch(logger, loader, model, split='val'):
     
     loader_bar = tqdm(loader)
     loader_bar.set_description_str('Eval Epoch')
+    rankings = {} # defaultdict(list)
     
     for batch in loader_bar:
         # batch, _ = preprocess_batch(batch, model, num_sample_config)
-        batch, _  = batch
+        batch, sampled_idx = batch
+        batch: Batch
+        sampled_idx: List[Tensor]
+        
         batch.split = split
         true = batch.y
         batch_list = batch.to_data_list()
@@ -392,7 +399,7 @@ def eval_epoch(logger, loader, model, split='val'):
             return res
         
         res = []
-        batch_graphs = cfg.train.batch_size * min(32, cfg.dataset.num_sample_config)
+        batch_graphs = cfg.train.batch_size * cfg.dataset.num_sample_config
         inference_bar = tqdm(range(0, len(batch_seg), batch_graphs))
         inference_bar.set_description_str('Partial Batch Inferece')
         for i in inference_bar:
@@ -419,6 +426,18 @@ def eval_epoch(logger, loader, model, split='val'):
             loss = pairwise_hinge_loss_batch(pred, true)
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred.detach().to('cpu', non_blocking=True)
+
+            for batch_i, (runtimes, indies) in enumerate(zip(_pred, sampled_idx)):
+                runtimes = runtimes.cpu().tolist()
+                indies = indies.cpu().tolist()
+                
+                graph_name = batch_list[batch_i].graph_name
+                item_name = f"layout:{cfg.dataset.source}:{cfg.dataset.search}:{graph_name}"
+                
+                ordered = set((rt, ind) for rt, ind in zip(runtimes, indies))
+                ordered = sorted(ordered)
+                cfg_rank_str = ";".join([str(o[1]) for o in ordered])
+                rankings[item_name] = cfg_rank_str
         else:
             loss, pred_score = compute_loss(pred, true)
             _true = true.detach().to('cpu', non_blocking=True)
@@ -431,6 +450,7 @@ def eval_epoch(logger, loader, model, split='val'):
                             dataset_name=cfg.dataset.name,
                             **extra_stats)
         time_start = time.time()
+    return rankings
 
 
 @register_train('custom_tpu')

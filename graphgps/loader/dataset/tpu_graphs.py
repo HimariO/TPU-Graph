@@ -111,7 +111,7 @@ class TPUGraphsNpz(Dataset):
     KEYS = [
         'num_config_idx', 'pestat_RWSE', 'edge_index', 'config_feats', 
         'num_config', 'eigvecs_sn', 'config_idx', 'op_feats', 'y', 
-        'num_nodes', 'partptr', 'partition_idx', 'op_code', 'eigvals_sn'
+        'num_nodes', 'partptr', 'partition_idx', 'op_code', 'eigvals_sn', 'graph_name',
     ]
     
     def __init__(
@@ -241,6 +241,10 @@ class TPUGraphsNpz(Dataset):
         data = torch.load(osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt'))
         if isinstance(data.partition_idx, int):  # HACK: habdle the case that PyGemo not able to convert int to tensor
             data.partition_idx = torch.tensor(data.partition_idx)
+        if not hasattr(data, 'graph_name'):  
+            # HACK: fill the graph name back for createing submission file, 
+            # not sure the order of file will always stay the same the different machine or not.
+            data.graph_name = osp.basename(self.raw_file_names[idx]).replace('.npz', '')
         op_feats_mean, op_feats_std = self.op_feat_mean_std
         data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
         return data
