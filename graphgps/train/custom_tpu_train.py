@@ -1,3 +1,4 @@
+import os
 import logging
 import time
 import copy
@@ -7,6 +8,7 @@ from collections import defaultdict
 import numpy as np
 import torch
 import torch_geometric.nn as tnn
+import pandas as pd
 from torch import nn, Tensor
 from torch_geometric.data import Batch
 from torch_geometric.graphgym.checkpoint import load_ckpt, save_ckpt, clean_ckpt
@@ -320,6 +322,12 @@ def eval_epoch(logger, loader, model, split='val'):
         batch, sampled_idx = batch
         batch: Batch
         sampled_idx: List[Tensor]
+        """
+        NOTE: 
+        to be able to support inference on all node configs per graph ontest-set,
+        `num_sample_config` will be dynamicly capped by `graph.number_config` per batch.
+        """
+        batch_num_sample = len(sampled_idx[0])
         
         batch.split = split
         true = batch.y
@@ -353,7 +361,14 @@ def eval_epoch(logger, loader, model, split='val'):
 
                 row, col, _ = adj.coo()
                 data.edge_index = torch.stack([row, col], dim=0)
-                for k in range(len(data.y)):
+                
+                if split == 'test':
+                    node_config_bar = tqdm(range(len(data.y)))
+                    node_config_bar.set_description_str(f'Config Batch-{i}, Seg-{j}')
+                else:
+                    node_config_bar = range(len(data.y))
+
+                for k in node_config_bar:
                     unfold_g = Data(
                         edge_index=data.edge_index,
                         op_feats=data.op_feats,
@@ -409,11 +424,17 @@ def eval_epoch(logger, loader, model, split='val'):
         res = torch.cat(res, dim=0)
         
         true = true.to(torch.device(cfg.device))
-        pred = torch.zeros([len(batch_list), len(data.y), 1]).to(torch.device(cfg.device))
+        pred = torch.zeros([
+            len(batch_list), 
+            batch_num_sample, 
+            1
+        ]).to(
+            torch.device(cfg.device)
+        )
         part_cnt = 0
         for i, num_parts in enumerate(batch_num_parts):
             for _ in range(num_parts):
-                for j in range(num_sample_config):
+                for j in range(len(sampled_idx[i])):
                     pred[i, j, :] += res[part_cnt, :]
                     part_cnt += 1
         
@@ -421,8 +442,8 @@ def eval_epoch(logger, loader, model, split='val'):
         # batch_num_parts = batch_num_parts.view(-1, 1)
         extra_stats = {}
         if 'TPUGraphs' in cfg.dataset.name:
-            pred = pred.view(-1, num_sample_config)
-            true = true.view(-1, num_sample_config)
+            pred = pred.view(-1, batch_num_sample)
+            true = true.view(-1, batch_num_sample)
             loss = pairwise_hinge_loss_batch(pred, true)
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred.detach().to('cpu', non_blocking=True)
@@ -611,6 +632,10 @@ def inference_only(loggers, loaders, model, optimizer=None, scheduler=None):
         optimizer: Unused, exists just for API compatibility
         scheduler: Unused, exists just for API compatibility
     """
+    model = model.to(cfg.device)
+    if cfg.train.auto_resume:
+        load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
+
     num_splits = len(loggers)
     split_names = ['train', 'val', 'test']
     perf = [[] for _ in range(num_splits)]
@@ -618,8 +643,15 @@ def inference_only(loggers, loaders, model, optimizer=None, scheduler=None):
     start_time = time.perf_counter()
 
     for i in range(0, num_splits):
-        eval_epoch(loggers[i], loaders[i], model,
-                   split=split_names[i])
+        if split_names[i] != 'test':
+            continue
+        rankings = eval_epoch(loggers[i], loaders[i], model,
+                                split=split_names[i])
+        
+        df_dict = {'ID': list(rankings.keys()), 'TopConfigs': list(rankings.values())}
+        sub_file = os.path.join(cfg.out_dir, 'submission.csv')
+        pd.DataFrame.from_dict(df_dict).to_csv(sub_file, index=False)
+        
         perf[i].append(loggers[i].write_epoch(cur_epoch))
     val_perf = perf[1]
 

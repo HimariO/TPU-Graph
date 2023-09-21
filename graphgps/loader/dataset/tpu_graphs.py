@@ -219,11 +219,13 @@ class TPUGraphsNpz(Dataset):
             partptr = torch.arange(0, num_nodes, interval+1)  # TODO: Find a better way to partition graph according to topologic 
             if partptr[-1] != num_nodes:
                 partptr = torch.cat([partptr, torch.tensor([num_nodes])])
+            graph_name = osp.basename(raw_path[idx]).replace('.npz', '')
             
             data = Data(edge_index=edge_index, op_feats=op, op_code=op_code, 
                         config_feats=config_feats, config_idx=config_idx,
                         num_config=num_config, num_config_idx=num_config_idx, y=runtime, 
-                        num_nodes=num_nodes, partptr=partptr, partition_idx = parts_cnt)
+                        num_nodes=num_nodes, partptr=partptr, partition_idx=parts_cnt, 
+                        graph_name=graph_name,)
             
             if self.pre_transform is not None:
                 data = self.pre_transform(data)
@@ -237,20 +239,24 @@ class TPUGraphsNpz(Dataset):
         return n * self.epoch_multiply
 
     def get(self, idx):
-        idx %= len(self.processed_file_names) - 1
-        data = torch.load(osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt'))
+        pt_file = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt')
+        # print(f"[{getattr(self, 'split_name', '?')}]Load {pt_file}")
+        data = torch.load(pt_file)
         if isinstance(data.partition_idx, int):  # HACK: habdle the case that PyGemo not able to convert int to tensor
             data.partition_idx = torch.tensor(data.partition_idx)
-        if not hasattr(data, 'graph_name'):  
+        if not hasattr(data, 'graph_name'):
             # HACK: fill the graph name back for createing submission file, 
             # not sure the order of file will always stay the same the different machine or not.
+            # BUG: they are not aligned!!
             data.graph_name = osp.basename(self.raw_file_names[idx]).replace('.npz', '')
         op_feats_mean, op_feats_std = self.op_feat_mean_std
         data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
         return data
     
     def get_idx_split(self):
-        return torch.load(self.processed_paths[-1])
+        if not hasattr(self, "_split_idxs"):
+            self._split_idxs = torch.load(self.processed_paths[-1])
+        return self._split_idxs
 
 
 if __name__ == '__main__':

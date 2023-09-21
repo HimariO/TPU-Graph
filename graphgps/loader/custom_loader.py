@@ -121,6 +121,8 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
     batch_list = batch
     processed_batch_list = []
     sample_idx = []
+    max_config_num = max(g.num_config.item() for g in batch_list)
+    
     for g in batch_list:
         if train_graph_segment:
             sample_idx.append(
@@ -128,8 +130,8 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
             )
         else:
             sample_idx.append(
-                torch.arange(0, min(g.num_config.item(), num_sample_configs))
-                # torch.arange(0, num_sample_configs) % g.num_config.item()
+                # torch.arange(0, min(g.num_config.item(), num_sample_configs))
+                torch.arange(0, min(max_config_num, num_sample_configs)) % g.num_config.item()
             )
         g.y = g.y[sample_idx[-1]]
         g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx[-1], ...]
@@ -137,7 +139,7 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
         g.config_feats_full = torch.zeros(
             [
                 g.num_nodes,
-                num_sample_configs,
+                len(sample_idx[-1]),
                 g.config_feats.shape[-1]
             ], 
             device=g.config_feats.device
@@ -172,7 +174,7 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
         )
         loader_train = DataLoader(dataset, batch_size=batch_size,
                                   shuffle=shuffle, num_workers=cfg.num_workers,
-                                  pin_memory=True, collate_fn=collate_fn)
+                                  pin_memory=False, collate_fn=collate_fn)
     elif sampler == "neighbor":
         loader_train = NeighborSampler(
             dataset[0], sizes=cfg.train.neighbor_sizes[:cfg.gnn.layers_mp],
@@ -239,6 +241,7 @@ def create_loader():
             get_loader(dataset[id], cfg.train.sampler, cfg.train.batch_size,
                        shuffle=True, train=True)
         ]
+        loaders[-1].dataset.split_name = 'train'
         delattr(dataset.data, 'train_graph_index')
     else:
         loaders = [
@@ -254,6 +257,8 @@ def create_loader():
             loaders.append(
                 get_loader(dataset[id], cfg.val.sampler, cfg.train.batch_size,
                            shuffle=False))
+            split_names = ['valid', 'test']
+            loaders[-1].dataset.split_name = split_names[i]
             delattr(dataset.data, split_names[i])
         else:
             loaders.append(
