@@ -15,7 +15,7 @@ dataset:
   dir: /home/ron_zhu/TPU-Graph/datasets/
   source: xla
   search: random
-  num_sample_config:  32
+  num_sample_config:  64
   eval_num_sample_config: 256
 train:
   mode: custom_tpu
@@ -41,6 +41,7 @@ gnn:
   dropout: 0.1
   agg: mean
   normalize_adj: False
+  dim_feat_enc: 128
 optim:
   optimizer: adam
   base_lr: 0.0001

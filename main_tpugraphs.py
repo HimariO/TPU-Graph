@@ -157,6 +157,11 @@ if __name__ == '__main__':
         # Set machine learning pipeline
         model = create_model() # Standard GCN/SAGE
         model = TPUModel(model) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
+        
+        if cfg.train.mode == 'inference-tpu':  # Include all configs in test time.
+            cfg.dataset.eval_num_sample_config = 100_000
+            cfg.train.batch_size = 1
+        
         loaders = create_loader()
         loggers = create_logger()
         if cfg.pretrained.dir:
