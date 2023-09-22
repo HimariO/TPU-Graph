@@ -516,13 +516,13 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
     split_names = ['val', 'test']
     full_epoch_times = []
     perf = [[] for _ in range(num_splits)]
-    emb_table = History(500000000, 1)
+    # emb_table = History(500000000, 1)
     for cur_epoch in range(start_epoch, cfg.optim.max_epoch):
         start_time = time.perf_counter()
         # for i in range(1, num_splits):
         #     eval_epoch(loggers[i], loaders[i], model,
         #                 split=split_names[i - 1])
-        train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, emb_table,
+        train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, model.history,
                     cfg.optim.batch_accumulation)
         perf[0].append(loggers[0].write_epoch(cur_epoch))
 

@@ -13,8 +13,18 @@ class History(torch.nn.Module):
         self.embedding_dim = embedding_dim
 
         pin_memory = device is None or str(device) == 'cpu'
-        self.emb = torch.empty(num_embeddings, embedding_dim, device=device,
-                               pin_memory=pin_memory)
+        self.emb = torch.nn.Parameter(
+            torch.zeros(
+                [
+                    num_embeddings, 
+                    embedding_dim, 
+                ], 
+                device=device,
+            ),
+            requires_grad=False
+        )
+        # self.emb = torch.empty(num_embeddings, embedding_dim, device=device,
+        #                        pin_memory=pin_memory)
 
         self._device = torch.device('cpu')
 
@@ -37,8 +47,11 @@ class History(torch.nn.Module):
         return out.to(device=self._device)
 
     @torch.no_grad()
-    def push(self, x, n_id: Optional[Tensor] = None,
-             offset: Optional[Tensor] = None, count: Optional[Tensor] = None):
+    def push(self, 
+             x, 
+             n_id: Optional[Tensor] = None,
+             offset: Optional[Tensor] = None, 
+             count: Optional[Tensor] = None):
 
         if n_id is None and x.size(0) != self.num_embeddings:
             raise ValueError

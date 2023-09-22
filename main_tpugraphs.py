@@ -29,6 +29,7 @@ import torch.nn as nn
 from graphgps.finetuning import load_pretrained_model_cfg, \
     init_model_from_pretrained
 from graphgps.logger import create_logger
+from graphgps.history import History
 
 
 def new_optimizer_config(cfg):
@@ -124,6 +125,7 @@ class TPUModel(torch.nn.Module):
         self.linear_map = nn.Linear(286, 128, bias=True)
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
         self.config_weights = nn.Parameter(torch.ones(1,18,requires_grad=True) * 100)
+        self.history = History(500000000, 1)
 
 
 if __name__ == '__main__':
