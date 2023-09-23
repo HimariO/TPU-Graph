@@ -12,6 +12,7 @@ from graphgps.loader.custom_loader import create_loader
 
 import numpy as np
 import lightning.pytorch as pl
+from tqdm import tqdm
 from torch import optim, nn, utils, Tensor
 from torch_geometric.graphgym.cmd_args import parse_args
 from torch_geometric.graphgym.config import (
@@ -73,7 +74,7 @@ class LitAutoEncoder(pl.LightningModule):
             nn.Linear(emb_dim * 4, feat_dim)
         )
 
-    def step(self, batch, batch_idx):
+    def forward(self, batch, batch_idx):
         opcode_emb = self.opcode_emb(batch['op_code'].long())
         features = batch['features']
         x = torch.cat([opcode_emb, features], dim=-1)
@@ -81,16 +82,15 @@ class LitAutoEncoder(pl.LightningModule):
         z = self.encoder(x)
         x_hat = self.decoder(z)
         loss = nn.functional.mse_loss(x_hat, x)
-        
-        return loss
+        return x_hat, z, loss
     
     def training_step(self, batch, batch_idx):
-        loss = self.step(batch, batch_idx)
+        x_hat, z, loss = self.forward(batch, batch_idx)
         self.log("train_loss", loss, prog_bar=True)
         return loss
     
     def validation_step(self, batch, batch_idx):
-        loss = self.step(batch, batch_idx)
+        x_hat, z, loss = self.forward(batch, batch_idx)
         self.log("val_loss", loss, prog_bar=True)
         return loss
 
@@ -126,6 +126,35 @@ def fourier_enc(ten: Tensor, scales=[-1, 0, 1, 2, 3, 4, 5, 6]) -> Tensor:
     ])
 
 
+def transform_feat(op_feats: Tensor):
+    op_shape = fourier_enc(op_feats[:, 21: 30])
+    op_parameters = fourier_enc(op_feats[:, 30: 31])
+    op_dims = fourier_enc(op_feats[:, 31: 37])
+    op_win_size = fourier_enc(op_feats[:, 37: 45])
+    op_win_stride = fourier_enc(op_feats[:, 45: 53])
+    op_win_lowpad = fourier_enc(op_feats[:, 53: 61])
+    op_win_hipad = fourier_enc(op_feats[:, 61: 69])
+    op_win_dila = fourier_enc(op_feats[:, 69: 85])
+    op_win_rever = op_feats[:, 85: 93]
+    op_else = fourier_enc(op_feats[:, 93:])
+    encoded = torch.cat(
+        [
+            op_feats[:, :21],
+            op_shape,
+            op_parameters,
+            op_dims,
+            op_win_size,
+            op_win_stride,
+            op_win_lowpad,
+            op_win_hipad,
+            op_win_dila,
+            op_win_rever,
+            op_else,
+        ], 
+        dim=-1
+    )
+    return encoded
+
 class TPUGraphNode(Dataset):
 
     def __init__(self, data_dir: str, num_samples: int=128) -> None:
@@ -153,32 +182,8 @@ class TPUGraphNode(Dataset):
         op_feats = op_feats[sample_idx]
         op_code = op_code[sample_idx]
 
-        global fourier_enc
-        op_shape = fourier_enc(op_feats[:, 21: 30])
-        op_parameters = fourier_enc(op_feats[:, 30: 31])
-        op_dims = fourier_enc(op_feats[:, 31: 37])
-        op_win_size = fourier_enc(op_feats[:, 37: 45])
-        op_win_stride = fourier_enc(op_feats[:, 45: 53])
-        op_win_lowpad = fourier_enc(op_feats[:, 53: 61])
-        op_win_hipad = fourier_enc(op_feats[:, 61: 69])
-        op_win_dila = fourier_enc(op_feats[:, 69: 85])
-        op_win_rever = op_feats[:, 85: 93]
-        op_else = fourier_enc(op_feats[:, 93:])
-        op_feats = torch.cat(
-            [
-                op_shape,
-                op_parameters,
-                op_dims,
-                op_win_size,
-                op_win_stride,
-                op_win_lowpad,
-                op_win_hipad,
-                op_win_dila,
-                op_win_rever,
-                op_else,
-            ], 
-            dim=-1
-        )
+        global transform_feat
+        op_feats = transform_feat(op_feats)
         
         return {
             'features': op_feats,
@@ -208,7 +213,7 @@ def train():
     from lightning.pytorch.loggers import WandbLogger
     from lightning.pytorch.callbacks import ModelCheckpoint
 
-    model = LitAutoEncoder(feat_dim=(1784 + 128), emb_dim=128)
+    model = LitAutoEncoder(feat_dim=(1805 + 128), emb_dim=128)
     
     train_dataset = TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/*/*/train")
     val_dataset = TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/xla/random/valid")
@@ -236,10 +241,49 @@ def train():
         model=model,
         train_dataloaders=train_loader,
         val_dataloaders=val_loader,
-        ckpt_path='lightning_logs/version_5/checkpoints/last.ckpt',
+        # ckpt_path='lightning_logs/version_5/checkpoints/last.ckpt',
     )
+
+
+@torch.no_grad()
+def insert_node_feature(data_dir, ckpt, new_name="op_feat_enc_i"):
+    model = LitAutoEncoder(feat_dim=(1805 + 128), emb_dim=128)
+    model.load_state_dict(torch.load(ckpt)['state_dict'])
+    model = model.to('cuda').eval()
+    
+    graph_files = glob.glob(os.path.join(data_dir, '*.pt'))
+    graph_files = sorted(graph_files)
+
+    encoded_feats = []
+    encode_file = []
+    for f in tqdm(graph_files, desc='Create embedding'):
+        graph = torch.load(f)
+        if hasattr(graph, "op_feats"):
+            data = {
+                'features': transform_feat(graph.op_feats.to('cuda')),
+                'op_code': graph.op_code.to('cuda'),
+            }
+            recon, encoded, _  = model(data, 0)
+            encoded_feats.append(encoded.cpu())
+            encode_file.append(f)
+    
+    all_feats = torch.concat(encoded_feats, dim=0)
+    op_feats_mean = torch.mean(all_feats, dim=0, keepdim=True)
+    op_feats_std = torch.std(all_feats, dim=0, keepdim=True)
+    op_feats_std[op_feats_std < 1e-6] = 1e-6
+    
+    for f, feat in tqdm(zip(encode_file, encoded_feats), desc='Insert Norm Embed'):
+        graph = torch.load(f)
+        if hasattr(graph, "op_feats"):
+            norm_feat = (feat - op_feats_mean) / op_feats_std
+            setattr(graph, new_name, norm_feat)
+            torch.save(graph, f)
 
 
 if __name__ == '__main__':
     # test_dataset()
-    train()
+    # train()
+    insert_node_feature(
+        "datasets/TPUGraphsNpz/processed", 
+        "./lightning_logs/version_0/checkpoints/last.ckpt",
+    )

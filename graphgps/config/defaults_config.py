@@ -39,5 +39,6 @@ def extended_cfg(cfg):
     cfg.dataset.search = 'random'
     cfg.dataset.num_sample_config = 32
     cfg.dataset.eval_num_sample_config = 512
+    cfg.dataset.input_feat_key = None
 
     cfg.debug = False

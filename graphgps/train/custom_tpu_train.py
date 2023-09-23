@@ -17,13 +17,17 @@ from torch_geometric.graphgym.loss import compute_loss
 from torch_geometric.graphgym.register import register_train
 from torch_geometric.graphgym.utils.epoch import is_eval_epoch, is_ckpt_epoch
 from torch_geometric.data import Data
-from torch_sparse import SparseTensor
 from tqdm import tqdm
 from loguru import logger
 
 from graphgps.loss.subtoken_prediction_loss import subtoken_cross_entropy
 from graphgps.utils import cfg_to_dict, flatten_dict, make_wandb_name
 from graphgps.history import History
+from graphgps.train.gst_utils import (
+    batch_sample_graph_segs,
+    cached_node_embed,
+    TPUModel,
+)
 
 
 def pairwise_hinge_loss_batch(pred, true):
@@ -49,117 +53,8 @@ def pairwise_hinge_loss(pred, true):
     return loss, pairwise_true[opa_indices], opa_preds
 
 
-def preprocess_batch(batch, model, num_sample_configs):
-    
-    # batch_list = batch.to_data_list()
-    batch_list = batch
-    processed_batch_list = []
-    sample_idx = []
-    for g in batch_list:
-        sample_idx.append(torch.randint(0, g.num_config.item(), (num_sample_configs,)))
-        g.y = g.y[sample_idx[-1]]
-        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx[-1], ...]
-        g.config_feats = g.config_feats.transpose(0,1)
-        g.config_feats_full = torch.zeros(
-            [
-                g.num_nodes,
-                num_sample_configs,
-                g.config_feats.shape[-1]
-            ], 
-            device=g.config_feats.device
-        )
-        g.config_feats_full[g.config_idx, ...] += g.config_feats
-        g.adj = SparseTensor(row=g.edge_index[0], col=g.edge_index[1], sparse_sizes=(g.num_nodes, g.num_nodes))
-        processed_batch_list.append(g)
-    return Batch.from_data_list(processed_batch_list), sample_idx
-
-
-def batch_sample_graph_segs(batch_list: List[Data], sampled_idx: torch.Tensor, emb_table: History, num_sample_config=32):
-    batch_train_list = []
-    batch_other = []
-    batch_num_parts = []
-    segments_to_train = []
-    
-    for i in range(len(batch_list)):
-        partptr = batch_list[i].partptr.cpu().numpy()
-        num_parts = len(partptr) - 1
-        batch_num_parts.extend([num_parts] * num_sample_config)
-        segment_to_train = np.random.randint(num_parts)
-        segments_to_train.append(segment_to_train)
-        
-        for j in range(num_parts):
-            start = int(partptr[j])
-            length = int(partptr[j + 1]) - start
-
-            N, E = batch_list[i].num_nodes, batch_list[i].num_edges
-            data = copy.copy(batch_list[i])
-            del data.num_nodes
-            adj, data.adj = data.adj, None
-
-            adj = adj.narrow(0, start, length).narrow(1, start, length)
-            edge_idx = adj.storage.value()
-
-            for key, item in data:
-                if isinstance(item, torch.Tensor) and item.size(0) == N:
-                    data[key] = item.narrow(0, start, length)
-                elif isinstance(item, torch.Tensor) and item.size(0) == E:
-                    data[key] = item[edge_idx]
-                else:
-                    data[key] = item
-
-            row, col, _ = adj.coo()
-            data.edge_index = torch.stack([row, col], dim=0)
-            if j == segment_to_train:
-                for k in range(len(data.y)):
-                    unfold_g = Data(
-                        edge_index=data.edge_index,
-                        op_feats=data.op_feats,
-                        op_code=data.op_code,
-                        config_feats=data.config_feats_full[:, k, :], 
-                        num_nodes=length,
-                    )
-                    batch_train_list.append(unfold_g)
-            else:
-                for k in range(len(data.y)):
-                    batch_other.append(
-                        emb_table.pull(
-                            batch_list[i].partition_idx.cpu() + num_parts * sampled_idx[i][k] + j
-                        )
-                    )
-    return (
-        batch_train_list,
-        batch_other,
-        batch_num_parts,
-        segments_to_train,
-    )
-
-
-def cached_node_embed(
-        batch_list: List[Data],
-        sampled_idx,
-        segments_to_train: List[int],
-        emb_table: History
-    ) -> List[torch.Tensor]:
-    batch_other = []
-    
-    for i, data in enumerate(batch_list):
-        partptr = data.partptr.cpu().numpy()
-        num_parts = len(partptr) - 1
-        
-        for j in range(num_parts):
-            if j == segments_to_train[i]:
-                continue
-            for k in range(len(data.y)):
-                batch_other.append(
-                    emb_table.pull(
-                        data.partition_idx.cpu() + num_parts * sampled_idx[i][k] + j
-                    )
-                )
-    return batch_other
-    
-
 @logger.catch(reraise=True)
-def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History, batch_accumulation: int):
+def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table: History, batch_accumulation: int):
     model.train()
     optimizer.zero_grad()
     time_start = time.time()
@@ -204,14 +99,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
         """
         concat node features & linear project to lower dim
         """
-        batch_train.split = 'train'
-        batch_train.op_emb = model.emb(batch_train.op_code.long())
-        batch_train.x = torch.cat([
-            batch_train.op_feats, 
-            batch_train.op_emb * model.op_weights,   # TODO: create a per op version of op_weights
-            batch_train.config_feats * model.config_weights
-        ], dim=-1)
-        batch_train.x = model.linear_map(batch_train.x)
+        batch_train = model.gather_input_feat(batch_train)
         
         """
         Inference on sampled graph segments
@@ -308,7 +196,7 @@ def train_epoch(logger, loader, model, optimizer, scheduler, emb_table: History,
 
 
 @torch.no_grad()
-def eval_epoch(logger, loader, model, split='val'):
+def eval_epoch(logger, loader, model: TPUModel, split='val'):
     model.eval()
     time_start = time.time()
     num_sample_config = cfg.dataset.eval_num_sample_config
@@ -385,19 +273,7 @@ def eval_epoch(logger, loader, model, split='val'):
             nonlocal model
             batch_seg = Batch.from_data_list(batch_seg)  # (batch_size * sum(num_segments[i], * num_config,)
             batch_seg.to(torch.device(cfg.device))
-            # more preprocessing
-            # batch_train.config_feats = model.config_feats_transform(batch_train.config_feats)
-            batch_seg.op_emb = model.emb(batch_seg.op_code.long())
-            # batch_train.op_feats = model.op_feats_transform(batch_train.op_feats)
-            batch_seg.x = torch.cat(
-                [
-                    batch_seg.op_feats, 
-                    model.op_weights * batch_seg.op_emb, 
-                    batch_seg.config_feats * model.config_weights
-                ], 
-                dim=-1
-            )
-            batch_seg.x = model.linear_map(batch_seg.x)
+            batch_seg = model.gather_input_feat(batch_seg)
         
             custom_gnn = model.model.model
             module_len = len(list(custom_gnn.children()))
@@ -653,30 +529,3 @@ def inference_only(loggers, loaders, model, optimizer=None, scheduler=None):
         pd.DataFrame.from_dict(df_dict).to_csv(sub_file, index=False)
         
         perf[i].append(loggers[i].write_epoch(cur_epoch))
-    val_perf = perf[1]
-
-    best_epoch = np.array([vp['loss'] for vp in val_perf]).argmin()
-    best_train = best_val = best_test = ""
-    if cfg.metric_best != 'auto':
-        # Select again based on val perf of `cfg.metric_best`.
-        m = cfg.metric_best
-        best_epoch = getattr(np.array([vp[m] for vp in val_perf]),
-                             cfg.metric_agg)()
-        if m in perf[0][best_epoch]:
-            best_train = f"train_{m}: {perf[0][best_epoch][m]:.4f}"
-        else:
-            # Note: For some datasets it is too expensive to compute
-            # the main metric on the training set.
-            best_train = f"train_{m}: {0:.4f}"
-        best_val = f"val_{m}: {perf[1][best_epoch][m]:.4f}"
-        best_test = f"test_{m}: {perf[2][best_epoch][m]:.4f}"
-
-    logging.info(
-        f"> Inference | "
-        f"train_loss: {perf[0][best_epoch]['loss']:.4f} {best_train}\t"
-        f"val_loss: {perf[1][best_epoch]['loss']:.4f} {best_val}\t"
-        f"test_loss: {perf[2][best_epoch]['loss']:.4f} {best_test}"
-    )
-    logging.info(f'Done! took: {time.perf_counter() - start_time:.2f}s')
-    for logger in loggers:
-        logger.close()

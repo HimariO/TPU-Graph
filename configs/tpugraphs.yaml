@@ -17,8 +17,9 @@ dataset:
   search: random
   num_sample_config:  32
   eval_num_sample_config: 64
+  input_feat_key: op_feat_enc_i
 train:
-  mode: inference-tpu
+  mode: custom_tpu
   batch_size: 2
   eval_period: 8
   ckpt_period: 100
@@ -40,7 +41,7 @@ gnn:
   dropout: 0.1
   agg: mean
   normalize_adj: False
-  dim_feat_enc: 128
+  dim_feat_enc: 146
 optim:
   optimizer: adam
   base_lr: 0.0001

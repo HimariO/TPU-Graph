@@ -3,11 +3,9 @@ import os
 import torch
 import logging
 
-import graphgps  # noqa, register custom modules
-from graphgps.optimizer.extra_optimizers import ExtendedSchedulerConfig
-from graphgps.loader.custom_loader import create_loader
 
 from torch_geometric.graphgym.cmd_args import parse_args
+import torch.nn as nn
 from torch_geometric.graphgym.config import (
     cfg, dump_cfg,
     set_cfg, load_cfg,
@@ -24,12 +22,16 @@ from torch_geometric.graphgym.utils.comp_budget import params_count
 from torch_geometric.graphgym.utils.device import auto_select_device
 from torch_geometric.graphgym.register import train_dict
 from torch_geometric import seed_everything
-import torch.nn as nn
+from torch_geometric.data import Data, Batch
 
+import graphgps  # noqa, register custom modules
+from graphgps.optimizer.extra_optimizers import ExtendedSchedulerConfig
+from graphgps.loader.custom_loader import create_loader
 from graphgps.finetuning import load_pretrained_model_cfg, \
     init_model_from_pretrained
 from graphgps.logger import create_logger
 from graphgps.history import History
+from graphgps.train.gst_utils import TPUModel
 
 
 def new_optimizer_config(cfg):
@@ -114,20 +116,6 @@ def run_loop_settings():
     return run_ids, seeds, split_indices
 
 
-class TPUModel(torch.nn.Module):
-    """
-    Wrapper to handle feature embedding/encoding
-    """
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-        self.emb = nn.Embedding(128, 128, max_norm=True)
-        self.linear_map = nn.Linear(286, 128, bias=True)
-        self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
-        self.config_weights = nn.Parameter(torch.ones(1,18,requires_grad=True) * 100)
-        self.history = History(500000000, 1)
-
-
 if __name__ == '__main__':
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning)
@@ -158,7 +146,7 @@ if __name__ == '__main__':
         logging.info(f"    Starting now: {datetime.datetime.now()}")
         # Set machine learning pipeline
         model = create_model() # Standard GCN/SAGE
-        model = TPUModel(model) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
+        model = TPUModel(model, input_feat_key=cfg.dataset.input_feat_key) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
         
         if cfg.train.mode == 'inference-tpu':  # Include all configs in test time.
             cfg.dataset.eval_num_sample_config = 100_000
