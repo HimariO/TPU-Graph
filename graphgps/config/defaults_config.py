@@ -20,6 +20,7 @@ def overwrite_defaults_cfg(cfg):
 
     # Overwrite default rounding precision
     cfg.round = 5
+    cfg.train.auto_resume = True
 
 
 @register_config('extended_cfg')
