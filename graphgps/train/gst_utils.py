@@ -132,7 +132,8 @@ class TPUModel(torch.nn.Module):
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
         self.config_weights = nn.Parameter(torch.ones(1, 18, requires_grad=True) * 100)
         self.history = History(500000000, 1)
-        self.config_map = nn.Linear(180, 32, bias=True)
+        if self.enc_config:
+            self.config_map = nn.Linear(180, 32, bias=True)
         
         self.input_feat_key = input_feat_key
         self.enc_config = enc_config
