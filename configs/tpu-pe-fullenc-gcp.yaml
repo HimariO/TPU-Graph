@@ -1,9 +1,9 @@
-out_dir: tests/results
-num_workers: 0
+out_dir: tests/xla-random-pe-fullenc
+num_workers: 8
 num_threads: 16
-debug: true
+debug: false
 wandb:
-  use: false
+  use: true
   entity: togglec
   project: tpu-graph
 dataset:
@@ -12,11 +12,11 @@ dataset:
   task: graph
   task_type: ranking
   transductive: False
-  dir: /home/ron/Projects/TPU-Graph/datasets/
+  dir: /home/ron_zhu/TPU-Graph/datasets/
   source: xla
   search: random
-  num_sample_config:  16
-  eval_num_sample_config: 32
+  num_sample_config: 32
+  eval_num_sample_config: 96
   node_encoder: True
   node_encoder_name: SignNet+RWSE
   node_encoder_bn: False
@@ -70,10 +70,11 @@ gnn:
   agg: mean
   normalize_adj: False
   dim_feat_enc: 244
+  enc_config: True
 optim:
   optimizer: adam
   base_lr: 0.0001
   max_epoch: 20000
 share:
-  dim_in: 146
+  dim_in: 160
 device: cuda

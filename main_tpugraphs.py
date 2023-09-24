@@ -146,7 +146,11 @@ if __name__ == '__main__':
         logging.info(f"    Starting now: {datetime.datetime.now()}")
         # Set machine learning pipeline
         model = create_model() # Standard GCN/SAGE
-        model = TPUModel(model, input_feat_key=cfg.dataset.input_feat_key) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
+        model = TPUModel(
+            model, 
+            input_feat_key=cfg.dataset.input_feat_key,
+            enc_config=cfg.gnn.enc_config,
+        ) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
         
         if cfg.train.mode == 'inference-tpu':  # Include all configs in test time.
             cfg.dataset.eval_num_sample_config = 100_000

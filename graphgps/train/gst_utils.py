@@ -3,7 +3,7 @@ from typing import *
 
 import torch
 import numpy as np
-from torch import nn
+from torch import nn, Tensor
 from torch_sparse import SparseTensor
 from torch_geometric.data import Data, Batch
 
@@ -124,7 +124,7 @@ class TPUModel(torch.nn.Module):
     """
     Wrapper to handle feature embedding/encoding
     """
-    def __init__(self, model, input_feat_key=None):
+    def __init__(self, model, input_feat_key=None, enc_config=False):
         super().__init__()
         self.model = model
         self.emb = nn.Embedding(128, 128, max_norm=True)
@@ -132,21 +132,44 @@ class TPUModel(torch.nn.Module):
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
         self.config_weights = nn.Parameter(torch.ones(1, 18, requires_grad=True) * 100)
         self.history = History(500000000, 1)
+        self.config_map = nn.Linear(180, 32, bias=True)
+        
         self.input_feat_key = input_feat_key
+        self.enc_config = enc_config
+    
+    def fourier_enc(self, ten: Tensor, scales=[-1, 0, 1, 2, 3, 4, 5, 6]) -> Tensor:
+        """
+        ten: (n, feature_dim)
+        return: (n, *feature_dim)
+        """
+        
+        def multiscale(x, scales):
+            return torch.hstack([x / pow(3., i) for i in scales])
+        
+        return torch.hstack([
+            torch.sin(multiscale(ten, scales)), 
+            torch.cos(multiscale(ten, scales))
+        ])
 
     def gather_input_feat(self, batch: Batch) -> Batch:
         batch.split = 'train'
+        if self.enc_config:
+            config_feats = self.fourier_enc(batch.config_feats, scales=[-1, 0, 1, 2, 3])
+            config_feats = self.config_map(config_feats)
+        else:
+            config_feats = batch.config_feats * self.config_weights
+        
         if self.input_feat_key is None:
             batch.op_emb = self.emb(batch.op_code.long())
             batch.x = torch.cat([
                 batch.op_feats, 
                 batch.op_emb * self.op_weights,   # TODO: create a per op version of op_weights
-                batch.config_feats * self.config_weights
+                config_feats,
             ], dim=-1)
             batch.x = self.linear_map(batch.x)
         else:
             batch.x = torch.cat([
                 getattr(batch, self.input_feat_key),
-                batch.config_feats * self.config_weights,
+                config_feats,
             ], dim=-1)
         return batch

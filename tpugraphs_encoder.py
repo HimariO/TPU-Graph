@@ -285,5 +285,5 @@ if __name__ == '__main__':
     # train()
     insert_node_feature(
         "datasets/TPUGraphsNpz/processed", 
-        "./lightning_logs/version_0/checkpoints/last.ckpt",
+        "feat-encoder.ckpt",
     )

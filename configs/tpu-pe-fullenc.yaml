@@ -70,10 +70,11 @@ gnn:
   agg: mean
   normalize_adj: False
   dim_feat_enc: 244
+  enc_config: True
 optim:
   optimizer: adam
   base_lr: 0.0001
   max_epoch: 20000
 share:
-  dim_in: 146
+  dim_in: 160
 device: cuda
