@@ -122,14 +122,18 @@ class TPUGraphsNpz(Dataset):
           pre_transform: Optional[Callable] = None,
           pre_filter: Optional[Callable] = None,
           source: str = 'nlp',  # 'nlp' or 'xla'
-          search: str = 'random'  # 'random' or 'default'
+          search: str = 'random',  # 'random' or 'default'
+          cache_in_memory: bool = False,
         ):
         assert source in ('nlp', 'xla')
         assert search in ('random', 'default')
+        print(f'[TPUGraphsNpz] source: {source}, search: {search}, cache_in_memory: {cache_in_memory}')
         self.thres = thres
         self.source = source
         self.search = search
         self.epoch_multiply = 1
+        self.cache_in_memory = cache_in_memory
+        self._cache = {}
         super().__init__(root, transform, pre_transform, pre_filter)
         self.op_feat_mean_std
         self.data = Data(
@@ -156,6 +160,10 @@ class TPUGraphsNpz(Dataset):
                 data = torch.load(path)
                 if isinstance(data, Data):
                     op_feats.append(data.op_feats)
+                    # if hasattr(data, 'op_feat_enc_i'):  # HACK: skip precompute if don't use it.
+                    #     self._op_feat_mean_std = (1.0, 1.0)
+                    #     return self._op_feat_mean_std
+            
             op_feats = torch.concat(op_feats, dim=0)
             op_feats_mean = torch.mean(op_feats, dim=0, keepdim=True)
             op_feats_std = torch.std(op_feats, dim=0, keepdim=True)
@@ -219,7 +227,7 @@ class TPUGraphsNpz(Dataset):
             partptr = torch.arange(0, num_nodes, interval+1)  # TODO: Find a better way to partition graph according to topologic 
             if partptr[-1] != num_nodes:
                 partptr = torch.cat([partptr, torch.tensor([num_nodes])])
-            graph_name = osp.basename(raw_path[idx]).replace('.npz', '')
+            graph_name = osp.basename(raw_path).replace('.npz', '')
             
             data = Data(edge_index=edge_index, op_feats=op, op_code=op_code, 
                         config_feats=config_feats, config_idx=config_idx,
@@ -239,13 +247,20 @@ class TPUGraphsNpz(Dataset):
         return n * self.epoch_multiply
 
     def get(self, idx):
+        if idx in self._cache:
+            # print('take from cache ', idx)
+            return copy.deepcopy(self._cache[idx])
+        
         pt_file = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt')
-        # print(f"[{getattr(self, 'split_name', '?')}]Load {pt_file}")
+        # print(f"[{getattr(self, 'split_name', '?')}]Load {pt_file}, {len(self._cache)}")
         data = torch.load(pt_file)
         if isinstance(data.partition_idx, int):  # HACK: habdle the case that PyGemo not able to convert int to tensor
             data.partition_idx = torch.tensor(data.partition_idx)
         op_feats_mean, op_feats_std = self.op_feat_mean_std
         data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
+        
+        if self.cache_in_memory:
+            self._cache[idx] = copy.deepcopy(data)
         return data
     
     def get_idx_split(self):

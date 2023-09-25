@@ -360,6 +360,7 @@ def preformat_TPUGraphsNpz(dataset_dir, pre_transforms=None):
         dataset_dir, 
         source=cfg.dataset.get('source', 'nlp'),
         search=cfg.dataset.get('search', 'random'),
+        cache_in_memory=cfg.dataset.cache_in_memory,
         pre_transform=pre_transforms,
     )
     dataset.name = 'TPUGraphsNpz'

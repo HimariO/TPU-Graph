@@ -173,8 +173,11 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
             ) 
         )
         loader_train = DataLoader(dataset, batch_size=batch_size,
-                                  shuffle=shuffle, num_workers=cfg.num_workers,
-                                  pin_memory=False, collate_fn=collate_fn)
+                                  shuffle=shuffle, 
+                                  num_workers=cfg.num_workers,
+                                  pin_memory=False, 
+                                  persistent_workers=True,
+                                  collate_fn=collate_fn)
     elif sampler == "neighbor":
         loader_train = NeighborSampler(
             dataset[0], sizes=cfg.train.neighbor_sizes[:cfg.gnn.layers_mp],

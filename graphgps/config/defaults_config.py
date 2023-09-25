@@ -38,8 +38,10 @@ def extended_cfg(cfg):
 
     cfg.dataset.source = 'nlp'
     cfg.dataset.search = 'random'
+    cfg.dataset.cache_in_memory = False
     cfg.dataset.num_sample_config = 32
     cfg.dataset.eval_num_sample_config = 512
     cfg.dataset.input_feat_key = None
 
     cfg.debug = False
+    cfg.model_ckpt = ''
