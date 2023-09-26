@@ -176,7 +176,7 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
                                   shuffle=shuffle, 
                                   num_workers=cfg.num_workers,
                                   pin_memory=False, 
-                                  persistent_workers=True,
+                                  persistent_workers=cfg.num_workers > 0,
                                   collate_fn=collate_fn)
     elif sampler == "neighbor":
         loader_train = NeighborSampler(

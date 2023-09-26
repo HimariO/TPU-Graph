@@ -220,6 +220,9 @@ class TPUGraphsNpz(Dataset):
             config_idx = torch.tensor(np_file["node_config_ids"])  # node-indies of configurable nodes
             num_config = torch.tensor(np_file["node_config_feat"].shape[0])
             num_config_idx = torch.tensor(np_file["node_config_feat"].shape[1])  # number of configurable nodes
+
+            if -2**7 <= config_feats.min() and config_feats.min() <= 2**7:
+                config_feats = config_feats.to(torch.int8)
             
             num_nodes = torch.tensor(np_file["node_feat"].shape[0])
             num_parts = num_nodes // self.thres + 1
@@ -249,18 +252,19 @@ class TPUGraphsNpz(Dataset):
     def get(self, idx):
         if idx in self._cache:
             # print('take from cache ', idx)
-            return copy.deepcopy(self._cache[idx])
-        
-        pt_file = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt')
-        # print(f"[{getattr(self, 'split_name', '?')}]Load {pt_file}, {len(self._cache)}")
-        data = torch.load(pt_file)
-        if isinstance(data.partition_idx, int):  # HACK: habdle the case that PyGemo not able to convert int to tensor
-            data.partition_idx = torch.tensor(data.partition_idx)
-        op_feats_mean, op_feats_std = self.op_feat_mean_std
-        data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
-        
-        if self.cache_in_memory:
-            self._cache[idx] = copy.deepcopy(data)
+            data = copy.deepcopy(self._cache[idx])
+        else:
+            pt_file = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt')
+            # print(f"[{getattr(self, 'split_name', '?')}]Load {pt_file}, {len(self._cache)}")
+            data = torch.load(pt_file)
+            if isinstance(data.partition_idx, int):  # HACK: habdle the case that PyGemo not able to convert int to tensor
+                data.partition_idx = torch.tensor(data.partition_idx)
+            op_feats_mean, op_feats_std = self.op_feat_mean_std
+            data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
+            
+            if self.cache_in_memory:
+                self._cache[idx] = copy.deepcopy(data)
+        data.config_feats = data.config_feats.float()
         return data
     
     def get_idx_split(self):
