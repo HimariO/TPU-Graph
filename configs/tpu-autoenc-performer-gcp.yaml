@@ -1,0 +1,89 @@
+out_dir: tests/nlp-default-performer-autoenc
+num_workers: 1
+num_threads: 16
+debug: false
+wandb:
+  use: true
+  entity: togglec
+  project: tpu-graph
+dataset:
+  name: TPUGraphsNpz
+  format: PyG-TPUGraphsNpz
+  task: graph
+  task_type: ranking
+  transductive: False
+  dir: /home/ron_zhu/TPU-Graph/datasets/
+  source: nlp
+  search: default
+  num_sample_config: 32
+  eval_num_sample_config: 64
+  node_encoder: True
+  node_encoder_name: SignNet+RWSE
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: DummyEdge
+  edge_encoder_bn: False
+  input_feat_key: op_feat_enc_i
+  cache_in_memory: true
+
+posenc_SignNet:
+  enable: True
+  eigen:
+    laplacian_norm: none
+    eigvec_norm: L2
+    max_freqs: 37  # Max graph size in molpcba is 332, but 97.1% are <= 37
+  model: DeepSet
+  dim_pe: 32  # Note: In original SignNet codebase dim_pe is always equal to max_freq
+  layers: 3  # Num. layers in \phi model
+  post_layers: 3  # Num. layers in \rho model; The original uses the same as in \phi
+  phi_hidden_dim: 48
+  phi_out_dim: 48
+posenc_RWSE:
+  enable: True
+  kernel:
+    times_func: range(1,17)
+  model: Linear
+  dim_pe: 20
+  raw_norm_type: BatchNorm
+
+train:
+  mode: custom_tpu
+  batch_size: 2
+  eval_period: 32
+  ckpt_period: 100
+  sampler: full_batch
+  auto_resume: true
+
+model:
+  type: GPSModel
+  loss_fun: cross_entropy
+  edge_decoding: dot
+  graph_pooling: add
+gt:
+  layer_type: CustomGatedGCN+Performer
+  layers: 4
+  n_heads: 4
+  dim_hidden: 256  # `gt.dim_hidden` must match `gnn.dim_inner`
+  dropout: 0.2
+  attn_dropout: 0.5
+  layer_norm: False
+  batch_norm: True
+gnn:
+  head: default  # san_graph
+  layers_pre_mp: 1
+  layers_post_mp: 1  # Not used when `gnn.head: san_graph`
+  dim_inner: 256  # `gt.dim_hidden` must match `gnn.dim_inner`
+  batchnorm: True
+  act: relu
+  dropout: 0.1
+  agg: mean
+  normalize_adj: False
+  dim_feat_enc: 244
+
+optim:
+  optimizer: adam
+  base_lr: 0.0001
+  max_epoch: 20000
+share:
+  dim_in: 146
+device: cuda

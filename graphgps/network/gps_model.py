@@ -60,7 +60,7 @@ class GPSModel(torch.nn.Module):
 
         if cfg.gnn.layers_pre_mp > 0:
             self.pre_mp = GNNPreMP(
-                dim_in, cfg.gnn.dim_inner, cfg.gnn.layers_pre_mp)
+                cfg.gnn.dim_feat_enc, cfg.gnn.dim_inner, cfg.gnn.layers_pre_mp)
             dim_in = cfg.gnn.dim_inner
 
         assert cfg.gt.dim_hidden == cfg.gnn.dim_inner == dim_in, \
