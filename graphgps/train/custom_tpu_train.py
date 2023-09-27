@@ -250,7 +250,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 row, col, _ = adj.coo()
                 data.edge_index = torch.stack([row, col], dim=0)
                 
-                if split == 'test':
+                if split == 'test' and False:
                     node_config_bar = tqdm(range(len(data.y)))
                     node_config_bar.set_description_str(f'Config Batch-{i}, Seg-{j}')
                 else:
@@ -497,7 +497,7 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
 
 
 @register_train('inference-tpu')
-def inference_only(loggers, loaders, model, optimizer=None, scheduler=None):
+def inference_only(loggers, loaders, model: TPUModel, optimizer=None, scheduler=None):
     """
     Customized pipeline to run inference only.
 
@@ -509,23 +509,62 @@ def inference_only(loggers, loaders, model, optimizer=None, scheduler=None):
         scheduler: Unused, exists just for API compatibility
     """
     model = model.to(cfg.device)
-    if cfg.train.auto_resume:
-        load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
+    if not cfg.model_ckpt:
+        if cfg.train.auto_resume:
+            load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
+    else:
+        logger.info(f"Load model weight from: {cfg.model_ckpt}")
+        checkpoint = torch.load(cfg.model_ckpt, map_location='cpu')
+        model.load_state_dict(checkpoint['model_state'], strict=False)
 
     num_splits = len(loggers)
     split_names = ['train', 'val', 'test']
     perf = [[] for _ in range(num_splits)]
     cur_epoch = 0
-    start_time = time.perf_counter()
 
     for i in range(0, num_splits):
-        if split_names[i] != 'test':
+        if split_names[i] not in ['test']:
             continue
         rankings = eval_epoch(loggers[i], loaders[i], model,
                                 split=split_names[i])
         
-        df_dict = {'ID': list(rankings.keys()), 'TopConfigs': list(rankings.values())}
-        sub_file = os.path.join(cfg.out_dir, 'submission.csv')
-        pd.DataFrame.from_dict(df_dict).to_csv(sub_file, index=False)
+        if split_names[i] == 'test':
+            df_dict = {'ID': list(rankings.keys()), 'TopConfigs': list(rankings.values())}
+            sub_file = os.path.join(cfg.out_dir, 'submission.csv')
+            pd.DataFrame.from_dict(df_dict).to_csv(sub_file, index=False)
         
+        perf[i].append(loggers[i].write_epoch(cur_epoch))
+
+
+@register_train('valid-tpu')
+def valid_once(loggers, loaders, model: TPUModel, optimizer=None, scheduler=None):
+    """
+    Customized pipeline to run inference only.
+
+    Args:
+        loggers: List of loggers
+        loaders: List of loaders
+        model: GNN model
+        optimizer: Unused, exists just for API compatibility
+        scheduler: Unused, exists just for API compatibility
+    """
+    model = model.to(cfg.device)
+    if not cfg.model_ckpt:
+        if cfg.train.auto_resume:
+            load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
+    else:
+        logger.info(f"Load model weight from: {cfg.model_ckpt}")
+        checkpoint = torch.load(cfg.model_ckpt, map_location='cpu')
+        model.load_state_dict(checkpoint['model_state'], strict=False)
+
+    num_splits = len(loggers)
+    split_names = ['train', 'val', 'test']
+    perf = [[] for _ in range(num_splits)]
+    cur_epoch = 0
+
+    for i in range(0, num_splits):
+        if split_names[i] != 'val':
+            continue
+        _ = eval_epoch(loggers[i], loaders[i], model,
+                                split=split_names[i])
         perf[i].append(loggers[i].write_epoch(cur_epoch))
