@@ -251,7 +251,7 @@ def insert_node_feature(data_dir, ckpt, new_name="op_feat_enc_i"):
     model.load_state_dict(torch.load(ckpt)['state_dict'])
     model = model.to('cuda').eval()
     
-    graph_files = glob.glob(os.path.join(data_dir, '*.pt'))
+    graph_files = glob.glob(data_dir)
     graph_files = sorted(graph_files)
 
     encoded_feats = []
@@ -284,6 +284,6 @@ if __name__ == '__main__':
     # test_dataset()
     # train()
     insert_node_feature(
-        "datasets/TPUGraphsNpz/processed", 
+        "datasets/TPUGraphsNpz/processed/xla_default_data_*.pt", 
         "feat-encoder.ckpt",
     )

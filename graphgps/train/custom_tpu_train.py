@@ -222,7 +222,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
         batch_list = batch.to_data_list()
         batch_seg = []
         batch_num_parts = []
-        
+
         for i in range(len(batch_list)):
             partptr = batch_list[i].partptr.cpu().numpy()
             num_parts = len(partptr) - 1
@@ -321,8 +321,8 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
             pred = pred.view(-1, batch_num_sample)
             true = true.view(-1, batch_num_sample)
             loss = pairwise_hinge_loss_batch(pred, true)
-            _true = true.detach().to('cpu', non_blocking=True)
-            _pred = pred.detach().to('cpu', non_blocking=True)
+            _true = true.detach().to('cpu')
+            _pred = pred.detach().to('cpu')
 
             for batch_i, (runtimes, indies) in enumerate(zip(_pred, sampled_idx)):
                 runtimes = runtimes.cpu().tolist()
@@ -334,11 +334,16 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 ordered = set((rt, ind) for rt, ind in zip(runtimes, indies))
                 ordered = sorted(ordered)
                 cfg_rank_str = ";".join([str(o[1]) for o in ordered])
+                
+                if 'val' in split and (item_name in rankings or all(v < 1e-6 for v in runtimes)):
+                    breakpoint()
+                    raise RuntimeError('Weird prediction values detected!')
+                
                 rankings[item_name] = cfg_rank_str
         else:
             loss, pred_score = compute_loss(pred, true)
-            _true = true.detach().to('cpu', non_blocking=True)
-            _pred = pred_score.detach().to('cpu', non_blocking=True)
+            _true = true.detach().to('cpu')
+            _pred = pred_score.detach().to('cpu')
         logger.update_stats(true=_true,
                             pred=_pred,
                             loss=loss.detach().cpu().item(),
