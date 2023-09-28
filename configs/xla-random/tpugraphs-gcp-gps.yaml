@@ -5,7 +5,7 @@ debug: false
 wandb:
   use: true
   entity: togglec
-  project: tpu-graph
+  project: tpu-graph-v2
 
 dataset:
   name: TPUGraphsNpz
