@@ -105,3 +105,18 @@
         'run_id': ''
     }
 }
+
+
+
+UPDATE-BASELINE:
+xla-random:
+    best-val-opa: 0.5924
+xla-default:
+    best-val-opa: 0.5607
+nlp-random:
+    best-val-opa: 0.86
+nlp-default:
+    best-val-opa: 0.66
+
+xla-tail:
+    val-opa: 0.8673
