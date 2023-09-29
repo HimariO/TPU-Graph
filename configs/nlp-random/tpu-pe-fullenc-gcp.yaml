@@ -1,4 +1,4 @@
-out_dir: tests/xla-random-pe-fullenc
+out_dir: tests/nlp-random-pe-fullenc
 num_workers: 1
 num_threads: 16
 debug: false
@@ -13,7 +13,7 @@ dataset:
   task_type: ranking
   transductive: False
   dir: /home/ron_zhu/TPU-Graph/datasets/
-  source: xla
+  source: nlp
   search: random
   num_sample_config: 32
   eval_num_sample_config: 96

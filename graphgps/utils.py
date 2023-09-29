@@ -106,19 +106,6 @@ def cfg_to_dict(cfg_node, key_list=[]):
 def make_wandb_name(cfg):
     # Format dataset name.
     dataset_name = cfg.dataset.format
-    if dataset_name.startswith('OGB'):
-        dataset_name = dataset_name[3:]
-    if dataset_name.startswith('PyG-'):
-        dataset_name = dataset_name[4:]
-    if dataset_name in ['GNNBenchmarkDataset', 'TUDataset']:
-        # Shorten some verbose dataset naming schemes.
-        dataset_name = ""
-    if cfg.dataset.name != 'none':
-        dataset_name += "-" if dataset_name != "" else ""
-        if cfg.dataset.name == 'LocalDegreeProfile':
-            dataset_name += 'LDP'
-        else:
-            dataset_name += cfg.dataset.name
     # Format model name.
     model_name = cfg.model.type
     if cfg.model.type in ['gnn', 'custom_gnn']:
@@ -126,6 +113,24 @@ def make_wandb_name(cfg):
     elif cfg.model.type == 'GPSModel':
         model_name = f"GPS.{cfg.gt.layer_type}"
     model_name += f".{cfg.name_tag}" if cfg.name_tag else ""
-    # Compose wandb run name.
-    name = f"{dataset_name}.{model_name}.r{cfg.run_id}"
-    return name
+
+    if "TPUGraph" in dataset_name:
+        subset_name = f"{cfg.dataset.source}.{cfg.dataset.search}"
+        return f"{model_name}.{subset_name}.r{cfg.run_id}"
+    else:
+        if dataset_name.startswith('OGB'):
+            dataset_name = dataset_name[3:]
+        if dataset_name.startswith('PyG-'):
+            dataset_name = dataset_name[4:]
+        if dataset_name in ['GNNBenchmarkDataset', 'TUDataset']:
+            # Shorten some verbose dataset naming schemes.
+            dataset_name = ""
+        if cfg.dataset.name != 'none':
+            dataset_name += "-" if dataset_name != "" else ""
+            if cfg.dataset.name == 'LocalDegreeProfile':
+                dataset_name += 'LDP'
+            else:
+                dataset_name += cfg.dataset.name
+        # Compose wandb run name.
+        name = f"{dataset_name}.{model_name}.r{cfg.run_id}"
+        return name

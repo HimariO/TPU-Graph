@@ -2,8 +2,10 @@ import os
 import logging
 import time
 import copy
+import datetime
 from typing import *
 from collections import defaultdict
+from contextlib import nullcontext
 
 import numpy as np
 import torch
@@ -107,12 +109,16 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
         """
         custom_gnn = model.model.model  # TPUModel.GraphGymModule.GNN
         module_len = len(list(custom_gnn.children()))
-        for i, module in enumerate(custom_gnn.children()):
-            if i < module_len - 1:
-                batch_train = module(batch_train)
-            if i == module_len - 1:
-                batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) \
-                                  + tnn.global_mean_pool(batch_train.x, batch_train.batch)
+        predict_ctx = torch.no_grad() if cfg.gnn.freeze_body else nullcontext()
+
+        with predict_ctx:
+            for i, module in enumerate(custom_gnn.children()):
+                if i < module_len - 1:
+                    batch_train = module(batch_train)
+                if i == module_len - 1:
+                    batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) \
+                                    + tnn.global_mean_pool(batch_train.x, batch_train.batch)
+        
         graph_embed = batch_train_embed / torch.norm(batch_train_embed, dim=-1, keepdim=True)
         for i, module in enumerate(custom_gnn.children()):
             if i == module_len - 1:
@@ -546,7 +552,9 @@ def inference_only(loggers, loaders, model: TPUModel, optimizer=None, scheduler=
         
         if split_names[i] == 'test':
             df_dict = {'ID': list(rankings.keys()), 'TopConfigs': list(rankings.values())}
-            sub_file = os.path.join(cfg.out_dir, 'submission.csv')
+            now = datetime.datetime.now()
+            time_stamp = f"{now.year}{now.month}{now.date}_{int(now.timestamp())}"
+            sub_file = os.path.join(cfg.out_dir, f'submission_{time_stamp}.csv')
             pd.DataFrame.from_dict(df_dict).to_csv(sub_file, index=False)
         
         perf[i].append(loggers[i].write_epoch(cur_epoch))

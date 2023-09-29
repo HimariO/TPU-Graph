@@ -1,5 +1,5 @@
 out_dir: tests/xla-default-pe-fullenc
-num_workers: 1
+num_workers: 2
 num_threads: 16
 debug: false
 wandb:

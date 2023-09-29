@@ -11,3 +11,4 @@ def custom_gnn_cfg(cfg):
     cfg.gnn.residual = False
     cfg.gnn.dim_feat_enc = 256
     cfg.gnn.enc_config = False
+    cfg.gnn.freeze_body = False
