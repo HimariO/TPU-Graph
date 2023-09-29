@@ -27,6 +27,7 @@ from graphgps.train.gst_utils import (
     batch_sample_graph_segs,
     cached_node_embed,
     TPUModel,
+    CheckpointWrapper,
 )
 
 
@@ -335,7 +336,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 ordered = sorted(ordered)
                 cfg_rank_str = ";".join([str(o[1]) for o in ordered])
                 
-                if 'val' in split and (item_name in rankings or all(v < 1e-6 for v in runtimes)):
+                if 'test' in split and (item_name in rankings or all(v < 1e-6 for v in runtimes)):
                     breakpoint()
                     raise RuntimeError('Weird prediction values detected!')
                 
@@ -356,7 +357,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
 
 
 @register_train('custom_tpu')
-def custom_train(loggers, loaders, model, optimizer, scheduler):
+def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
     """
     Customized training pipeline.
 
@@ -372,9 +373,14 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
     first_run_epoch = True
     start_epoch = 0
     model = model.to(cfg.device)
+    
     if cfg.train.auto_resume:
-        start_epoch = load_ckpt(model, optimizer, scheduler,
-                                cfg.train.epoch_resume)
+        start_epoch = load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
+    if cfg.model_ckpt:
+        logger.info(f"Load model weight from: {cfg.model_ckpt}")
+        checkpoint = torch.load(cfg.model_ckpt, map_location='cpu')
+        model.load_state_dict(checkpoint['model_state'], strict=False)
+    
     if start_epoch == cfg.optim.max_epoch:
         logging.info('Checkpoint found, Task already done')
     else:
@@ -427,8 +433,7 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
             scheduler.step()
         full_epoch_times.append(time.perf_counter() - start_time)
         # Checkpoint with regular frequency (if enabled).
-        if cfg.train.enable_ckpt and not cfg.train.ckpt_best \
-                and is_ckpt_epoch(cur_epoch):
+        if cfg.train.enable_ckpt and is_ckpt_epoch(cur_epoch):
             save_ckpt(model, optimizer, scheduler, cur_epoch)
 
         if cfg.wandb.use:
@@ -469,9 +474,15 @@ def custom_train(loggers, loaders, model, optimizer, scheduler):
             # Checkpoint the best epoch params (if enabled).
             if cfg.train.enable_ckpt and cfg.train.ckpt_best and \
                     best_epoch == cur_epoch:
-                save_ckpt(model, optimizer, scheduler, cur_epoch)
+                src_w = model.state_dict()
+                src_w.pop('history.emb')
+                # save_ckpt(CheckpointWrapper(src_w), optimizer, scheduler, cur_epoch)
+                ckpt_path = os.path.join(cfg.run_dir, 'ckpt', f'best-{cur_epoch}.ckpt')
+                torch.save({"model_state": src_w}, ckpt_path)
+                
                 if cfg.train.ckpt_clean:  # Delete old ckpt each time.
                     clean_ckpt()
+            
             logging.info(
                 f"> Epoch {cur_epoch}: took {full_epoch_times[-1]:.1f}s "
                 f"(avg {np.mean(full_epoch_times):.1f}s) | "

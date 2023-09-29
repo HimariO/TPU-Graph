@@ -177,3 +177,15 @@ class TPUModel(torch.nn.Module):
                 config_feats,
             ], dim=-1)
         return batch
+
+
+class CheckpointWrapper:
+    """
+    A state_dict wrapper act like a nn.Module for a `save_ckpt` method.
+    """
+
+    def __init__(self, states):
+        self._states = states
+    
+    def state_dict(self):
+        return self._states
