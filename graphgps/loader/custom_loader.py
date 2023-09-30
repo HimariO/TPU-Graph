@@ -136,6 +136,7 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
         g.y = g.y[sample_idx[-1]]
         g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx[-1], ...]
         g.config_feats = g.config_feats.transpose(0,1)
+        # NOTE: add padding to non-configable nodes
         g.config_feats_full = torch.zeros(
             [
                 g.num_nodes,
@@ -144,7 +145,8 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
             ], 
             device=g.config_feats.device
         )
-        g.config_feats_full[g.config_idx, ...] += g.config_feats
+        g.config_feats_full -= 1
+        g.config_feats_full[g.config_idx, ...] = g.config_feats
         g.adj = SparseTensor(row=g.edge_index[0], col=g.edge_index[1], sparse_sizes=(g.num_nodes, g.num_nodes))
         processed_batch_list.append(g)
     # breakpoint()

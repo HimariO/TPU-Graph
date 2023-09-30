@@ -29,7 +29,8 @@ def preprocess_batch(batch, model, num_sample_configs):
             ], 
             device=g.config_feats.device
         )
-        g.config_feats_full[g.config_idx, ...] += g.config_feats
+        g.config_feats_full -= 1
+        g.config_feats_full[g.config_idx, ...] = g.config_feats
         g.adj = SparseTensor(row=g.edge_index[0], col=g.edge_index[1], sparse_sizes=(g.num_nodes, g.num_nodes))
         processed_batch_list.append(g)
     return Batch.from_data_list(processed_batch_list), sample_idx
