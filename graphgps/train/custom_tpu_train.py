@@ -342,7 +342,8 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 ordered = sorted(ordered)
                 cfg_rank_str = ";".join([str(o[1]) for o in ordered])
                 
-                if 'test' in split and (item_name in rankings or all(v < 1e-6 for v in runtimes)):
+                exact_inorder = all([o[1] == i for i, o in enumerate(ordered)])
+                if 'test' in split and (item_name in rankings or exact_inorder):
                     breakpoint()
                     raise RuntimeError('Weird prediction values detected!')
                 
@@ -383,6 +384,7 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
     if cfg.train.auto_resume:
         start_epoch = load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
     if cfg.model_ckpt:
+        global logger
         logger.info(f"Load model weight from: {cfg.model_ckpt}")
         checkpoint = torch.load(cfg.model_ckpt, map_location='cpu')
         model.load_state_dict(checkpoint['model_state'], strict=False)
@@ -479,11 +481,11 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
                     run.summary["full_epoch_time_sum"] = np.sum(full_epoch_times)
             # Checkpoint the best epoch params (if enabled).
             if cfg.train.enable_ckpt and cfg.train.ckpt_best and \
-                    best_epoch == cur_epoch:
+                    best_epoch == len(val_perf) - 1:
                 src_w = model.state_dict()
                 src_w.pop('history.emb')
                 # save_ckpt(CheckpointWrapper(src_w), optimizer, scheduler, cur_epoch)
-                ckpt_path = os.path.join(cfg.run_dir, 'ckpt', f'best-{cur_epoch}.ckpt')
+                ckpt_path = os.path.join(cfg.run_dir, f'best-{cur_epoch}.ckpt')
                 torch.save({"model_state": src_w}, ckpt_path)
                 
                 if cfg.train.ckpt_clean:  # Delete old ckpt each time.
@@ -553,7 +555,7 @@ def inference_only(loggers, loaders, model: TPUModel, optimizer=None, scheduler=
         if split_names[i] == 'test':
             df_dict = {'ID': list(rankings.keys()), 'TopConfigs': list(rankings.values())}
             now = datetime.datetime.now()
-            time_stamp = f"{now.year}{now.month}{now.date}_{int(now.timestamp())}"
+            time_stamp = f"{now.year}{now.month:02}{now.day:02}_{int(now.timestamp())}"
             sub_file = os.path.join(cfg.out_dir, f'submission_{time_stamp}.csv')
             pd.DataFrame.from_dict(df_dict).to_csv(sub_file, index=False)
         
