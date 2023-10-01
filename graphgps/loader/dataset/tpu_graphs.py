@@ -1,9 +1,13 @@
-from typing import Optional, Callable, List
 import copy
 import re
 import os
 import glob
 import os.path as osp
+from dataclasses import dataclass
+from collections import defaultdict
+from itertools import product, accumulate
+from typing import Optional, Callable, List, Dict
+
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -106,6 +110,16 @@ class TPUGraphs(InMemoryDataset):
         return torch.load(self.processed_paths[1])
 
 
+@dataclass
+class DatasetStatistics:
+    op_feat_mean: torch.Tensor
+    op_feat_std: torch.Tensor
+    num_nodes: int
+    num_graphs: int
+    num_segments: int
+    max_node_per_graph: int
+
+
 class TPUGraphsNpz(Dataset):
 
     KEYS = [
@@ -135,7 +149,7 @@ class TPUGraphsNpz(Dataset):
         self.cache_in_memory = cache_in_memory
         self._cache = {}
         super().__init__(root, transform, pre_transform, pre_filter)
-        self.op_feat_mean_std
+        self.meta
         self.data = Data(
             edge_index=None,
             op_feats=None,
@@ -152,25 +166,42 @@ class TPUGraphsNpz(Dataset):
         self.slices = None
     
     @property
-    def op_feat_mean_std(self):
-        if not hasattr(self, "_op_feat_mean_std"):
+    def meta(self):
+        if not hasattr(self, "_meta"):
             op_feats = []
-            print('Computing op_feat_mean_std...')
+            print('Computing meta...')
+            
+            total_nodes = 0
+            total_segs = 0
+            total_graphs = 0
+            max_nodes = 0
+            
             for path in tqdm(self.processed_paths):
                 data = torch.load(path)
                 if isinstance(data, Data):
                     op_feats.append(data.op_feats)
-                    # if hasattr(data, 'op_feat_enc_i'):  # HACK: skip precompute if don't use it.
-                    #     self._op_feat_mean_std = (1.0, 1.0)
-                    #     return self._op_feat_mean_std
+                    num_node = data.op_feats.size(0)
+                    total_nodes += num_node
+                    total_segs += num_node // self.thres + 1
+                    max_nodes = max(max_nodes, num_node)
+                    total_graphs += 1
             
             op_feats = torch.concat(op_feats, dim=0)
             op_feats_mean = torch.mean(op_feats, dim=0, keepdim=True)
             op_feats_std = torch.std(op_feats, dim=0, keepdim=True)
             op_feats_std[op_feats_std < 1e-6] = 1
-            self._op_feat_mean_std = (op_feats_mean, op_feats_std)
+            
+            self._meta = DatasetStatistics(
+                op_feat_mean=op_feats_mean,
+                op_feat_std=op_feats_std,
+                num_graphs=total_graphs,
+                num_nodes=total_nodes,
+                num_segments=total_segs,
+                max_node_per_graph=max_nodes,
+            )
+            print(self._meta)
         # self.data.op_feats = (self.data.op_feats - op_feats_mean) / op_feats_std
-        return self._op_feat_mean_std
+        return self._meta
         
     @property
     def raw_file_names(self):
@@ -259,7 +290,8 @@ class TPUGraphsNpz(Dataset):
             data = torch.load(pt_file)
             if isinstance(data.partition_idx, int):  # HACK: habdle the case that PyGemo not able to convert int to tensor
                 data.partition_idx = torch.tensor(data.partition_idx)
-            op_feats_mean, op_feats_std = self.op_feat_mean_std
+            op_feats_mean = self.meta.op_feat_mean
+            op_feats_std = self.meta.op_feat_std
             data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
             
             if self.cache_in_memory:
@@ -270,6 +302,98 @@ class TPUGraphsNpz(Dataset):
     def get_idx_split(self):
         if not hasattr(self, "_split_idxs"):
             self._split_idxs = torch.load(self.processed_paths[-1])
+        return self._split_idxs
+
+
+
+class MixTPUGraphsNpz(Dataset):
+    
+    def __init__(
+          self, 
+          root: str, 
+          thres: int = 1000,
+          transform: Optional[Callable] = None,
+          pre_transform: Optional[Callable] = None,
+          pre_filter: Optional[Callable] = None,
+          source: str = 'nlp+xla',  # 'nlp' or 'xla'
+          search: str = 'random+default',  # 'random' or 'default'
+          cache_in_memory: bool = False,
+        ):
+        source: List[str] = sorted(source.split('+'))
+        search: List[str] = sorted(search.split('+'))
+        self.dataset_names: List[str] = []
+        self.datasets: Dict[str, TPUGraphsNpz] = {}
+        
+        for a, b in product(source, search):
+            name = f"{a}_{b}"
+            self.dataset_names.append(name)
+            self.datasets[name] = TPUGraphsNpz(
+                root.replace('MixTPUGraphsNpz', 'TPUGraphsNpz'),
+                thres=thres,
+                transform=transform,
+                pre_transform=pre_transform,
+                pre_filter=pre_filter,
+                source=a,
+                search=b,
+                cache_in_memory=cache_in_memory,
+            )
+        self.custom_split_names = ['train'] + [f'valid_{v}' for v in self.dataset_names] + ['test']  # for split_generator.py
+        super().__init__(root, transform, pre_transform, pre_filter)
+        
+        # HACK: dummy for passing graphgps dataset check
+        self.data = Data(
+            edge_index=None,
+            op_feats=None,
+            op_code=None,
+            config_feats=None,
+            config_idx=None,
+            num_config=None,
+            num_config_idx=None,
+            y=None,
+            partptr=None,
+            partition_idx=None,
+            num_nodes=1,
+        )
+        self.slices = None
+    
+    @property
+    def segment_offsets(self):
+        offsets = [0]
+        for k in self.dataset_names[:-1]:
+            prev = offsets[-1]
+            offsets.append(prev + self.datasets[k].meta.num_segments)
+        return offsets
+    
+    def len(self):
+        sizes = [len(dset) for dset in self.datasets.values()]
+        return sum(sizes)
+
+    def get(self, idx):
+        end_indies = [0] + list(accumulate(len(self.datasets[k]) for k in self.dataset_names))
+        for i, (a, b) in enumerate(zip(end_indies, end_indies[1:])):
+            if a <= idx < b:
+                src = self.datasets[self.dataset_names[i]]
+                graph: Data = src.get(idx - a)
+                if hasattr(graph, 'partition_idx'):
+                    segment_offset = self.segment_offsets[i]
+                    graph.partition_idx += segment_offset
+                return graph
+        raise IndexError(f"{idx} isn't a valid index in a dataset of size {len(self)}")
+    
+    def get_idx_split(self):
+        if not hasattr(self, "_split_idxs"):
+            self._split_idxs = defaultdict(list)
+            start_indies = [0] + list(accumulate(len(self.datasets[k]) for k in self.dataset_names[:-1]))
+            start_indies = { k: v for k, v in zip(self.dataset_names, start_indies) }
+            
+            for name, dataset in self.datasets.items():
+                offset = start_indies[name]
+                for split, idx in dataset.get_idx_split().items():
+                    off_idx = [j + offset for j in idx]
+                    if split == 'valid':
+                        self._split_idxs[f"valid_{name}"] = off_idx
+                    else:
+                        self._split_idxs[split] += off_idx
         return self._split_idxs
 
 

@@ -7,6 +7,7 @@ from typing import *
 from collections import defaultdict
 from contextlib import nullcontext
 
+import pysnooper
 import numpy as np
 import torch
 import torch_geometric.nn as tnn
@@ -63,10 +64,14 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
     time_start = time.time()
     num_sample_config = cfg.dataset.num_sample_config  # number of configs per graph
 
+    if cfg.debug: print(f"@ Start of Epoch")
+
     for iter, batch in enumerate(loader):
+        if cfg.debug: print(f"@ iter-{iter} start")
         batch, sampled_idx = batch
         
         t0 = time.time()
+        # with pysnooper.snoop():
         if isinstance(batch, Batch):
             batch.to(torch.device(cfg.device))
             true = batch.y
@@ -93,6 +98,7 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
             true = batch_obj.y
             batch_other = cached_node_embed(batch_list, sampled_idx, segments_to_train, emb_table)
         
+        if cfg.debug: print(f"@ iter-{iter} graph: ", set([b.graph_name for b in batch_train_list]))
         td0 = time.time() - t0
         t1 = time.time()
 
@@ -200,6 +206,7 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
                             params=cfg.params,
                             dataset_name=cfg.dataset.name)
         time_start = time.time()
+        if cfg.debug: print(f"@ iter{iter} end")
 
 
 @torch.no_grad()
@@ -408,15 +415,13 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
         run.config.update(cfg_to_dict(cfg))
 
     num_splits = len(loggers)
-    split_names = ['val', 'test']
+    split_names = [loader.dataset.split_name for loader in loaders]
+    # split_names = ['val', 'test']
     full_epoch_times = []
     perf = [[] for _ in range(num_splits)]
     # emb_table = History(500000000, 1)
     for cur_epoch in range(start_epoch, cfg.optim.max_epoch):
         start_time = time.perf_counter()
-        # for i in range(1, num_splits):
-        #     eval_epoch(loggers[i], loaders[i], model,
-        #                 split=split_names[i - 1])
         train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, model.history,
                     cfg.optim.batch_accumulation)
         perf[0].append(loggers[0].write_epoch(cur_epoch))
@@ -427,7 +432,7 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
                     perf[i].append(perf[i - 1][-1])
                     continue
                 eval_epoch(loggers[i], loaders[i], model,
-                           split=split_names[i - 1])
+                           split=split_names[i])
                 perf[i].append(loggers[i].write_epoch(cur_epoch))
         else:
             for i in range(1, num_splits):
@@ -445,7 +450,7 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
             save_ckpt(model, optimizer, scheduler, cur_epoch)
 
         if cfg.wandb.use:
-            run.log(flatten_dict(perf), step=cur_epoch)
+            run.log(flatten_dict(perf, prefixes=split_names), step=cur_epoch)
 
         # Log current best stats on eval epoch.
         if is_eval_epoch(cur_epoch):
@@ -542,12 +547,12 @@ def inference_only(loggers, loaders, model: TPUModel, optimizer=None, scheduler=
         model.load_state_dict(checkpoint['model_state'], strict=False)
 
     num_splits = len(loggers)
-    split_names = ['train', 'val', 'test']
+    split_names = [loader.dataset.split_name for loader in loaders]
     perf = [[] for _ in range(num_splits)]
     cur_epoch = 0
 
     for i in range(0, num_splits):
-        if split_names[i] not in ['test']:
+        if split_names[i] != 'test':
             continue
         rankings = eval_epoch(loggers[i], loaders[i], model,
                                 split=split_names[i])
@@ -584,12 +589,12 @@ def valid_once(loggers, loaders, model: TPUModel, optimizer=None, scheduler=None
         model.load_state_dict(checkpoint['model_state'], strict=False)
 
     num_splits = len(loggers)
-    split_names = ['train', 'val', 'test']
+    split_names = [loader.dataset.split_name for loader in loaders]
     perf = [[] for _ in range(num_splits)]
     cur_epoch = 0
 
     for i in range(0, num_splits):
-        if split_names[i] != 'val':
+        if 'val' not in split_names[i]:
             continue
         _ = eval_epoch(loggers[i], loaders[i], model,
                                 split=split_names[i])

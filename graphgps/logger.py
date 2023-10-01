@@ -12,6 +12,7 @@ from torch_geometric.graphgym import get_current_gpu_usage
 from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.logger import infer_task, Logger
 from torch_geometric.graphgym.utils.io import dict_to_json, dict_to_tb
+from torch_geometric.data import Dataset
 from torchmetrics.functional import auroc
 
 import graphgps.metrics_ogb as metrics_ogb
@@ -301,7 +302,7 @@ class CustomLogger(Logger):
         return stats
 
 
-def create_logger():
+def create_logger(datasets=None):
     """
     Create logger for the experiment
 
@@ -310,8 +311,12 @@ def create_logger():
     """
     loggers = []
     names = ['train', 'val', 'test']
-    for i, dataset in enumerate(range(cfg.share.num_splits)):
-        loggers.append(CustomLogger(name=names[i], task_type=infer_task()))
+    datasets = range(cfg.share.num_splits) if datasets is None else datasets
+    for i, dataset in enumerate(datasets):
+        if isinstance(dataset, Dataset):
+            loggers.append(CustomLogger(name=dataset.split_name, task_type=infer_task()))
+        else:
+            loggers.append(CustomLogger(name=names[i], task_type=infer_task()))
     return loggers
 
 

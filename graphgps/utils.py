@@ -63,7 +63,7 @@ def negate_edge_index(edge_index, batch=None):
     return edge_index_negative
 
 
-def flatten_dict(metrics):
+def flatten_dict(metrics, prefixes = ['train', 'val', 'test']):
     """Flatten a list of train/val/test metrics into one dict to send to wandb.
 
     Args:
@@ -72,7 +72,6 @@ def flatten_dict(metrics):
     Returns:
         A flat dictionary with names prefixed with "train/" , "val/" , "test/"
     """
-    prefixes = ['train', 'val', 'test']
     result = {}
     for i in range(len(metrics)):
         # Take the latest metrics.

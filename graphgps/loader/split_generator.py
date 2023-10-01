@@ -154,11 +154,17 @@ def set_dataset_splits(dataset, splits):
             set_dataset_attr(dataset, split_name, mask, len(mask))
 
     elif task_level == 'graph':
-        split_names = [
-            'train_graph_index', 'val_graph_index', 'test_graph_index'
-        ]
-        for split_name, split_index in zip(split_names, splits):
-            set_dataset_attr(dataset, split_name, split_index, len(split_index))
+        if hasattr(dataset, 'custom_split_names'):
+            split_idx = dataset.get_idx_split()
+            for name in dataset.custom_split_names:
+                split_name = f"{name}_graph_index"
+                set_dataset_attr(dataset, split_name, split_idx[name], len(split_idx[name]))
+        else:
+            split_names = [
+                'train_graph_index', 'val_graph_index', 'test_graph_index'
+            ]
+            for split_name, split_index in zip(split_names, splits):
+                set_dataset_attr(dataset, split_name, split_index, len(split_index))
 
     else:
         raise ValueError(f"Unsupported dataset task level: {task_level}")

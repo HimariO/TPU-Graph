@@ -160,7 +160,7 @@ if __name__ == '__main__':
             cfg.train.batch_size = 1
         
         loaders = create_loader()
-        loggers = create_logger()
+        loggers = create_logger(datasets=[loader.dataset for loader in loaders])
         if cfg.pretrained.dir:
             model = init_model_from_pretrained(
                 model, cfg.pretrained.dir, cfg.pretrained.freeze_main,

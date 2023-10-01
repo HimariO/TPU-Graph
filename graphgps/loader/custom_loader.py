@@ -254,20 +254,39 @@ def create_loader():
                        shuffle=True, train=True)
         ]
 
-    # val and test loaders
-    for i in range(cfg.share.num_splits - 1):
-        if cfg.dataset.task == 'graph':
-            split_names = ['val_graph_index', 'test_graph_index']
-            id = dataset.data[split_names[i]]
-            loaders.append(
-                get_loader(dataset[id], cfg.val.sampler, cfg.train.batch_size,
-                           shuffle=False))
-            split_names = ['valid', 'test']
-            loaders[-1].dataset.split_name = split_names[i]
-            delattr(dataset.data, split_names[i])
-        else:
-            loaders.append(
-                get_loader(dataset, cfg.val.sampler, cfg.train.batch_size,
-                           shuffle=False))
+    if hasattr(dataset, 'custom_split_names'):
+        for i in range(1, len(dataset.custom_split_names)):
+            if cfg.dataset.task == 'graph':
+                split_names = [f'{n}_graph_index' for n in dataset.custom_split_names]
+                indies = dataset.data[split_names[i]]
+                loaders.append(
+                    get_loader(
+                        dataset[indies],
+                        cfg.val.sampler,
+                        cfg.train.batch_size,
+                        shuffle=False
+                    )
+                )
+                split_names = dataset.custom_split_names
+                loaders[-1].dataset.split_name = split_names[i]
+                delattr(dataset.data, split_names[i])
+            else:
+                raise NotImplementedError()
+    else:
+        # val and test loaders
+        for i in range(cfg.share.num_splits - 1):
+            if cfg.dataset.task == 'graph':
+                split_names = ['val_graph_index', 'test_graph_index']
+                id = dataset.data[split_names[i]]
+                loaders.append(
+                    get_loader(dataset[id], cfg.val.sampler, cfg.train.batch_size,
+                            shuffle=False))
+                split_names = ['valid', 'test']
+                loaders[-1].dataset.split_name = split_names[i]
+                delattr(dataset.data, split_names[i])
+            else:
+                loaders.append(
+                    get_loader(dataset, cfg.val.sampler, cfg.train.batch_size,
+                            shuffle=False))
 
     return loaders
