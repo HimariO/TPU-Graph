@@ -7,3 +7,6 @@ wandb
 torch_sparse
 torch_scatter
 fire
+ranky
+loguru
+pysnooper

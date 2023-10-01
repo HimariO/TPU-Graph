@@ -120,3 +120,5 @@ nlp-default:
 
 xla-tail:
     val-opa: 0.8673
+
+.17 + .13 + .17 + .11 + .12
