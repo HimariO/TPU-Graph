@@ -1,0 +1,51 @@
+out_dir: tests/nlp-random
+num_workers: 8
+num_threads: 16
+debug: false
+wandb:
+  use: true
+  entity: togglec
+  project: tpu-graph-v2
+dataset:
+  name: TPUGraphsNpz
+  format: PyG-TPUGraphsNpz
+  task: graph
+  task_type: ranking
+  transductive: False
+  dir: /home/ron_zhu/TPU-Graph/datasets/
+  source: nlp
+  search: random
+  num_sample_config:  64
+  eval_num_sample_config: 256
+train:
+  mode: custom_tpu
+  batch_size: 4
+  eval_period: 64
+  ckpt_period: 100
+  sampler: full_batch
+  auto_resume: true
+model:
+  type: custom_tpu_gnn
+  loss_fun: cross_entropy
+  edge_decoding: dot
+  graph_pooling: add
+gnn:
+  layers_pre_mp: 1
+  layers_mp: 3
+  layers_post_mp: 2
+  dim_inner: 256
+  layer_type: sageconv
+  stage_type: skipsum
+  batchnorm: False
+  act: prelu
+  dropout: 0.1
+  agg: mean
+  normalize_adj: False
+  dim_feat_enc: 128
+optim:
+  optimizer: adam
+  base_lr: 0.0001
+  max_epoch: 20000
+share:
+  dim_in: 286
+device: cuda

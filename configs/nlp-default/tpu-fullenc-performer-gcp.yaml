@@ -1,4 +1,4 @@
-out_dir: tests/nlp-default-sage-pe-autoenc
+out_dir: tests/nlp-default-performer-fullenc
 num_workers: 1
 num_threads: 16
 debug: false
@@ -53,28 +53,39 @@ train:
   ckpt_period: 100
   sampler: full_batch
   auto_resume: true
+
 model:
-  type: custom_tpu_gnn
+  type: GPSModel
   loss_fun: cross_entropy
   edge_decoding: dot
   graph_pooling: add
+gt:
+  layer_type: CustomGatedGCN+Performer
+  layers: 4
+  n_heads: 4
+  dim_hidden: 256  # `gt.dim_hidden` must match `gnn.dim_inner`
+  dropout: 0.2
+  attn_dropout: 0.5
+  layer_norm: False
+  batch_norm: True
 gnn:
+  head: default  # san_graph
   layers_pre_mp: 1
-  layers_mp: 3
-  layers_post_mp: 2
-  dim_inner: 256
-  layer_type: sageconv
-  stage_type: skipsum
-  batchnorm: False
-  act: prelu
+  layers_post_mp: 1  # Not used when `gnn.head: san_graph`
+  dim_inner: 256  # `gt.dim_hidden` must match `gnn.dim_inner`
+  batchnorm: True
+  act: relu
   dropout: 0.1
   agg: mean
   normalize_adj: False
   dim_feat_enc: 244
+  enc_config: True
+
 optim:
   optimizer: adam
   base_lr: 0.0001
   max_epoch: 20000
+  batch_accumulation: 2
 share:
-  dim_in: 146
+  dim_in: 160
 device: cuda
