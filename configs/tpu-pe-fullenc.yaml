@@ -1,9 +1,9 @@
-out_dir: tests/results
-num_workers: 0
+out_dir: tests/nlp-random-fullenc-ft
+num_workers: 1
 num_threads: 16
-debug: true
+debug: false
 wandb:
-  use: false
+  use: true
   entity: togglec
   project: tpu-graph-v2
 dataset:
@@ -13,10 +13,10 @@ dataset:
   task_type: ranking
   transductive: False
   dir: /home/ron/Projects/TPU-Graph/datasets/
-  source: xla
+  source: nlp
   search: random
-  num_sample_config:  16
-  eval_num_sample_config: 32
+  num_sample_config: 32
+  eval_num_sample_config: 96
   node_encoder: True
   node_encoder_name: SignNet+RWSE
   node_encoder_bn: False
@@ -24,6 +24,7 @@ dataset:
   edge_encoder_name: DummyEdge
   edge_encoder_bn: False
   input_feat_key: op_feat_enc_i
+  cache_in_memory: true
 
 posenc_SignNet:
   enable: True
@@ -46,7 +47,7 @@ posenc_RWSE:
   raw_norm_type: BatchNorm
 
 train:
-  mode: custom_tpu
+  mode: valid-tpu
   batch_size: 2
   eval_period: 32
   ckpt_period: 100
@@ -70,7 +71,8 @@ gnn:
   agg: mean
   normalize_adj: False
   dim_feat_enc: 244
-  enc_config: True
+  enc_config: true
+  freeze_body: false
 optim:
   optimizer: adam
   base_lr: 0.0001
@@ -78,3 +80,5 @@ optim:
 share:
   dim_in: 160
 device: cuda
+model_ckpt: best-1599.ckpt
+# model_ckpt: tests/nlp-random-fullenc-ft/tpu-pe-fullenc/0/best-447.ckpt

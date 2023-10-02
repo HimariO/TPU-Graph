@@ -132,7 +132,7 @@ class TPUModel(torch.nn.Module):
         self.linear_map = nn.Linear(286, 128, bias=True)
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
         self.config_weights = nn.Parameter(torch.ones(1, 18, requires_grad=True) * 100)
-        self.history = History(500000000, 1)
+        self.history = History(500_000_000, 1)
         if enc_config:
             self.config_map = nn.Sequential(
                 nn.Linear(180, 32, bias=True),

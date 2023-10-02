@@ -1,9 +1,9 @@
-out_dir: tests/xla-random-fullenc-ft
-num_workers: 0
+out_dir: tests/mix-performer-fullenc
+num_workers: 8
 num_threads: 16
 debug: false
 wandb:
-  use: false
+  use: true
   entity: togglec
   project: tpu-graph-v2
 dataset:
@@ -12,11 +12,11 @@ dataset:
   task: graph
   task_type: ranking
   transductive: False
-  dir: /home/ron/Projects/TPU-Graph/datasets/
-  source: nlp+xla
-  search: default+random
-  num_sample_config: 24
-  eval_num_sample_config: 96
+  dir: /home/ron_zhu/TPU-Graph/datasets/
+  source: xla
+  search: random+default
+  num_sample_config: 32
+  eval_num_sample_config: 64
   node_encoder: True
   node_encoder_name: SignNet+RWSE
   node_encoder_bn: False
@@ -49,36 +49,43 @@ posenc_RWSE:
 train:
   mode: custom_tpu
   batch_size: 2
-  eval_period: 2
-  ckpt_period: 100
+  eval_period: 8
+  ckpt_period: 32
   sampler: full_batch
   auto_resume: true
+
 model:
-  type: custom_tpu_gnn
+  type: GPSModel
   loss_fun: cross_entropy
   edge_decoding: dot
   graph_pooling: add
+gt:
+  layer_type: CustomGatedGCN+Performer
+  layers: 4
+  n_heads: 4
+  dim_hidden: 256  # `gt.dim_hidden` must match `gnn.dim_inner`
+  dropout: 0.2
+  attn_dropout: 0.5
+  layer_norm: False
+  batch_norm: True
 gnn:
+  head: default  # san_graph
   layers_pre_mp: 1
-  layers_mp: 3
-  layers_post_mp: 2
-  dim_inner: 256
-  layer_type: sageconv
-  stage_type: skipsum
-  batchnorm: False
-  act: prelu
+  layers_post_mp: 1  # Not used when `gnn.head: san_graph`
+  dim_inner: 256  # `gt.dim_hidden` must match `gnn.dim_inner`
+  batchnorm: True
+  act: relu
   dropout: 0.1
   agg: mean
   normalize_adj: False
   dim_feat_enc: 244
-  enc_config: true
-  freeze_body: false
+  enc_config: True
+
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 20000
+  max_epoch: 2000
+  batch_accumulation: 2
 share:
   dim_in: 160
-  num_splits: 6
 device: cuda
-model_ckpt: xla-rand-1599.ckpt

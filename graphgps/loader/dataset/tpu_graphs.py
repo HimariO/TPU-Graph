@@ -117,6 +117,7 @@ class DatasetStatistics:
     num_nodes: int
     num_graphs: int
     num_segments: int
+    num_unique_segments: int
     max_node_per_graph: int
 
 
@@ -172,6 +173,7 @@ class TPUGraphsNpz(Dataset):
             print('Computing meta...')
             
             total_nodes = 0
+            total_unq_segs = 0
             total_segs = 0
             total_graphs = 0
             max_nodes = 0
@@ -181,8 +183,10 @@ class TPUGraphsNpz(Dataset):
                 if isinstance(data, Data):
                     op_feats.append(data.op_feats)
                     num_node = data.op_feats.size(0)
+                    num_cfgs = data.config_feats.size(0)
                     total_nodes += num_node
-                    total_segs += num_node // self.thres + 1
+                    total_unq_segs += num_node // self.thres + 1
+                    total_segs += (num_node // self.thres + 1) * num_cfgs
                     max_nodes = max(max_nodes, num_node)
                     total_graphs += 1
             
@@ -197,6 +201,7 @@ class TPUGraphsNpz(Dataset):
                 num_graphs=total_graphs,
                 num_nodes=total_nodes,
                 num_segments=total_segs,
+                num_unique_segments=total_unq_segs,
                 max_node_per_graph=max_nodes,
             )
             print(self._meta)
