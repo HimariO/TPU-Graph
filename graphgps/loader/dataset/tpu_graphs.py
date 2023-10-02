@@ -366,7 +366,7 @@ class MixTPUGraphsNpz(Dataset):
         offsets = [0]
         for k in self.dataset_names[:-1]:
             prev = offsets[-1]
-            offsets.append(prev + self.datasets[k].meta.num_segments)
+            offsets.append(prev + self.datasets[k].meta.num_unique_segments)
         return offsets
     
     def len(self):
