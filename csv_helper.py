@@ -1,13 +1,19 @@
 import os
 import glob
 from collections import Counter
+from itertools import combinations, permutations
+from typing import *
 
-import torch
 import fire
+import ranky
+import torch
+import scipy
 import numpy as np
+import networkx as nx
 import pandas as pd
 from tqdm import tqdm
 from loguru import logger
+
 
 OPCODE = {
     "abs": 1,
@@ -133,6 +139,55 @@ OPCODE = {
 
 @logger.catch
 def draw_graph(graph_file):
+    ignores = ['parameter', 'get-tuple-element', 'tuple', 'constant']
+    # ignores = []
+    code2op = {v: k for k, v in OPCODE.items()}
+    np_graph = np.load(graph_file)
+    
+    num_nodes = np_graph["node_feat"].shape[0]
+    print('num_nodes: ', num_nodes)
+    # breakpoint()
+    graph = {
+        "edges": np_graph['edge_index'].tolist(),
+        "node_name": [''] * num_nodes
+    }
+    node_config_ids = set(np_graph['node_config_ids'].tolist())
+    op_cnts = Counter()
+    for i, op in enumerate(np_graph['node_opcode']):
+        op_cnts[code2op[op]] += 1
+        if code2op[op] in ignores:
+            continue
+        graph['node_name'][i] = f"[{i}] {code2op[op]}"
+
+    # Create a directed graph
+    G = nx.DiGraph()
+
+    # Add nodes and edges from your graph data
+    for node_name in graph["node_name"]:
+        G.add_node(node_name)
+
+    for edge in graph["edges"]:
+        from_node, to_node = edge
+        G.add_edge(graph["node_name"][from_node], graph["node_name"][to_node])
+
+    # Create a layout for the nodes
+    pos = nx.spring_layout(G)
+
+    # Draw the graph
+    nx.draw(G, pos, with_labels=True, node_size=5000, node_color="skyblue", font_size=10, font_color="black", font_weight="bold")
+
+    # Display node names
+    labels = {node_name: node_name for node_name in graph["node_name"]}
+    nx.draw_networkx_labels(G, pos, labels, font_size=8, font_color="black", font_weight="bold")
+
+    # # Show the graph
+    # plt.axis("off")
+    # plt.show()
+    nx.write_gexf(G, graph_file.replace(".npz", ".gexf"))
+
+
+@logger.catch
+def _draw_graph(graph_file):
     from graphviz import Digraph
     # ignores = ['parameter']
     ignores = []
@@ -227,10 +282,117 @@ def overwrite(csv_a, csv_b, out_path):
     a_df.to_csv(out_path, index=False)
 
 
+def rankaggr_lp(ranks):
+
+    def _build_graph(ranks: np.ndarray):
+        n_voters, n_candidates = ranks.shape
+        edge_weights = np.zeros((n_candidates, n_candidates))
+        for i, j in combinations(range(n_candidates), 2):
+            preference = ranks[:, i] - ranks[:, j]
+            h_ij = np.sum(preference < 0)  # prefers i to j
+            h_ji = np.sum(preference > 0)  # prefers j to i
+            if h_ij > h_ji:
+                edge_weights[i, j] = h_ij - h_ji
+            elif h_ij < h_ji:
+                edge_weights[j, i] = h_ji - h_ij
+        return edge_weights
+
+    """Kemeny-Young optimal rank aggregation"""
+
+    n_voters, n_candidates = ranks.shape
+    
+    # maximize c.T * x
+    edge_weights = _build_graph(ranks)
+    c = -1 * edge_weights.ravel()  
+
+    idx = lambda i, j: n_candidates * i + j
+
+    # constraints for every pair
+    pairwise_constraints = np.zeros(((n_candidates * (n_candidates - 1)) / 2,
+                                     n_candidates ** 2))
+    for row, (i, j) in zip(pairwise_constraints,
+                           combinations(range(n_candidates), 2)):
+        row[[idx(i, j), idx(j, i)]] = 1
+
+    # and for every cycle of length 3
+    triangle_constraints = np.zeros(((n_candidates * (n_candidates - 1) *
+                                     (n_candidates - 2)),
+                                     n_candidates ** 2))
+    for row, (i, j, k) in zip(triangle_constraints,
+                              permutations(range(n_candidates), 3)):
+        row[[idx(i, j), idx(j, k), idx(k, i)]] = 1
+
+    constraints = np.vstack([pairwise_constraints, triangle_constraints])
+    constraint_rhs = np.hstack([np.ones(len(pairwise_constraints)),
+                                np.ones(len(triangle_constraints))])
+    constraint_signs = np.hstack([np.zeros(len(pairwise_constraints)),  # ==
+                                  np.ones(len(triangle_constraints))])  # >=
+
+    obj, x, duals = lp_solve(c, constraints, constraint_rhs, constraint_signs,
+                             xint=range(1, 1 + n_candidates ** 2))
+    scipy.optimize.linprog(c, )
+
+    x = np.array(x).reshape((n_candidates, n_candidates))
+    aggr_rank = x.sum(axis=1)
+
+    return obj, aggr_rank
+
+
+def ensemble_csv(csvs: List[str], out_path: str):
+    print('Ensemble CSVs: ', csvs)
+
+
+    def merge(rank_strs: List[str]) -> str:
+        print('merging: ', rank_strs)
+        score_mtx = []
+        for judge, s in enumerate(rank_strs):
+            config_ids = [int(v) for v in s.split(';')]
+            score_mtx.append([0] * len(config_ids))
+            for rank, id in enumerate(config_ids):
+                score_mtx[judge][id] = float(rank)
+
+            print(score_mtx[-1])
+        score_mtx = np.asarray(score_mtx)
+        # merge_score = ranky.pairwise(score_mtx.T)
+        # merge_score = ranky.kemeny_young(score_mtx.T, workers=16)
+        merge_score = score_mtx.mean(axis=0)
+        new_rank = sorted([(score, i) for i, score in enumerate(merge_score)])
+        return ';'.join(str(r[1]) for r in new_rank)
+    
+
+    dfs = [
+        pd.read_csv(file)
+        for file in csvs
+    ]
+
+    all_id = [set(df['ID']) for df in dfs]
+    all_id = all_id[0].union(*all_id[1:])
+
+    updated_ranks = {}
+    for row_id in tqdm(all_id):
+        predicts = []
+        for df in dfs:
+            row = df[df['ID'] == row_id]
+            rank_str = row['TopConfigs'].values[0]
+            predicts.append(rank_str)
+        if len(predicts) > 1:
+            updated_ranks[row_id] = merge(predicts)
+        else:
+            updated_ranks[row_id] = predicts[0]
+
+    result = {'ID': [], 'TopConfigs': []}
+    for k, v in updated_ranks.items():
+        result['ID'].append(k)
+        result['TopConfigs'].append(v)
+    
+    pd.DataFrame.from_dict(result).to_csv(out_path, index=False)
+
+
 if __name__ == '__main__':
     fire.Fire({
         overwrite.__name__: overwrite,
         strip_table.__name__: strip_table,
         int8_config_feat.__name__: int8_config_feat,
         draw_graph.__name__: draw_graph,
+        ensemble_csv.__name__: ensemble_csv,
     })
