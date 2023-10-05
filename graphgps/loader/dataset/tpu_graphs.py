@@ -2,6 +2,7 @@ import copy
 import re
 import os
 import glob
+import random
 import os.path as osp
 from dataclasses import dataclass
 from collections import defaultdict
@@ -121,12 +122,74 @@ class DatasetStatistics:
     max_node_per_graph: int
 
 
+class IntervalSampler:
+    """
+    Each graph can have upto tens thoughs of config, and each config will have one runtime as the groundtruth ref of the model.
+    All the runtimes from a single graph can cover a large ranges, ex: a graph can have 4e7 ~ 1e9 ms runtime according to different config,
+    And this sampler pick only some subset that have similiary runtimes that help model to learn more fine-grain different
+    between different configs.
+    """
+    def __init__(self, interval_size=512, interval_lifetime=40) -> None:
+        self.interval_size = interval_size  # NOTE: this should be >= cfg.dataset.num_sample_config
+        self.interval_lifetime = interval_lifetime
+        self.lifetimes = defaultdict(lambda: 0)
+        self.intervals = {}
+    
+    def _resample(self, ind: int, graph: Data):
+        all_zero = (graph.y < 1e-6).all()
+        if all_zero:  # runtime can't be sort
+            return graph
+        
+        if self.lifetimes[ind] <= 0:
+            n = graph.y.size(0)
+            _, indices = graph.y.sort()
+            low = random.randint(0, max(0, n - 1 - self.interval_size))
+            hi = min(n - 1, low + self.interval_size)
+            self.intervals[ind] = indices[low: hi]
+            self.lifetimes[ind] = self.interval_lifetime
+        else:
+            self.lifetimes[ind] -= 1
+        
+        new_graph = copy.deepcopy(graph)
+        new_graph.y = new_graph.y[self.intervals[ind]]
+        
+        feat_dim = new_graph.config_feats.size(-1)
+        new_graph.config_feats = new_graph.config_feats.view(
+            new_graph.num_config, -1, feat_dim)
+        new_graph.config_feats = new_graph.config_feats[self.intervals[ind]]
+        new_graph.config_feats = new_graph.config_feats.view(-1, feat_dim)
+        
+        new_graph.num_config = new_graph.y.size(0)
+        return new_graph
+    
+    def resample(self, graph: Data, num_sample_configs: int):
+        all_zero = (graph.y < 1e-6).all()
+        # if all_zero or random.random() < 0.33:  # runtime can't be sort
+        #     return torch.randint(0, graph.num_config.item(), (num_sample_configs,))
+        
+        ind = f"{graph.graph_name}_{graph.source_dataset}"
+        if self.lifetimes[ind] <= 0:
+            n = graph.y.size(0)
+            _, indices = graph.y.sort()
+            low = random.randint(0, max(0, n - 1 - self.interval_size))
+            hi = min(n - 1, low + self.interval_size)
+            self.intervals[ind] = indices[low: hi]
+            self.lifetimes[ind] = self.interval_lifetime
+        else:
+            self.lifetimes[ind] -= 1
+        
+        resample_idx = torch.randint(0, len(self.intervals[ind]), [num_sample_configs])
+        sample_idx = self.intervals[ind][resample_idx]
+        graph.y[sample_idx]
+        return sample_idx
+
+
 class TPUGraphsNpz(Dataset):
 
     KEYS = [
         'num_config_idx', 'pestat_RWSE', 'edge_index', 'config_feats', 
         'num_config', 'eigvecs_sn', 'config_idx', 'op_feats', 'y', 
-        'num_nodes', 'partptr', 'partition_idx', 'op_code', 'eigvals_sn', 'graph_name',
+        'num_nodes', 'partptr', 'partition_idx', 'op_code', 'eigvals_sn', 'graph_name', 'source_dataset',
     ]
     
     def __init__(
@@ -165,6 +228,7 @@ class TPUGraphsNpz(Dataset):
             num_nodes=1,
         )
         self.slices = None
+        self.label_sampler = None
     
     @property
     def meta(self):
@@ -302,6 +366,7 @@ class TPUGraphsNpz(Dataset):
             if self.cache_in_memory:
                 self._cache[idx] = copy.deepcopy(data)
         data.config_feats = data.config_feats.float()
+        data.source_dataset = f"{self.source}-{self.search}-{idx}"
         return data
     
     def get_idx_split(self):
@@ -369,6 +434,15 @@ class MixTPUGraphsNpz(Dataset):
             offsets.append(prev + self.datasets[k].meta.num_unique_segments)
         return offsets
     
+    @property
+    def label_sampler(self):
+        return [self.datasets[k].label_sampler for k in self.dataset_names]
+    
+    @label_sampler.setter
+    def label_sampler(self, sampler):
+        for dataset in self.datasets.values():
+            dataset.label_sampler = copy.deepcopy(sampler)
+
     def len(self):
         sizes = [len(dset) for dset in self.datasets.values()]
         return sum(sizes)

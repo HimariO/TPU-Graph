@@ -493,6 +493,20 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
                 ckpt_path = os.path.join(cfg.run_dir, f'best-{cur_epoch}.ckpt')
                 torch.save({"model_state": src_w}, ckpt_path)
                 
+                if cfg.wandb.use:
+                    art_name = f"{cfg.dataset.source}-{cfg.dataset.search}-{wandb.run.id}"
+                    model_artifact = wandb.Artifact(
+                        art_name.replace('+', '-'), 
+                        type='model', 
+                        metadata={
+                            'epoch': cur_epoch,
+                            'val_opa': val_perf[-1]['opa'],
+                            'params': val_perf[-1]['params'],
+                        }
+                    )
+                    model_artifact.add_file(ckpt_path, name=os.path.basename(ckpt_path))
+                    wandb.log_artifact(model_artifact)
+                
                 if cfg.train.ckpt_clean:  # Delete old ckpt each time.
                     clean_ckpt()
             

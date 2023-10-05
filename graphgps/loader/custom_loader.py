@@ -46,6 +46,7 @@ from torch_geometric.graphgym.loader import (
 )
 from torch_geometric.data import Batch, Data
 from torch_sparse import SparseTensor
+from graphgps.loader.dataset.tpu_graphs import IntervalSampler
 
 index2mask = index_to_mask  # TODO Backward compatibility
 
@@ -115,7 +116,7 @@ def batch_sample_graph_segs(batch: Batch, num_sample_config=32):
     )
 
 
-def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
+def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False, sampler=None):
     
     # batch_list = batch.to_data_list()
     batch_list = batch
@@ -125,9 +126,12 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
     
     for g in batch_list:
         if train_graph_segment:
-            sample_idx.append(
-                torch.randint(0, g.num_config.item(), (num_sample_configs,))
-            )
+            if sampler is None:
+                sample_idx.append(
+                    torch.randint(0, g.num_config.item(), (num_sample_configs,))
+                )
+            else:
+                sample_idx.append(sampler.resample(g, num_sample_configs))
         else:
             sample_idx.append(
                 # torch.arange(0, min(g.num_config.item(), num_sample_configs))
@@ -162,11 +166,20 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False):
 
 def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
     if sampler == "full_batch" or len(dataset) > 1:
+        config_sampler = {
+            'IntervalSampler': IntervalSampler,
+        }
+        if train and cfg.dataset.config_sampler in config_sampler:
+            sampler = config_sampler[cfg.dataset.config_sampler]()
+        else:
+            sampler = None
+        
         collate_fn = (
             partial(
                 preprocess_batch,
                 train_graph_segment=True,
-                num_sample_configs=cfg.dataset.num_sample_config
+                num_sample_configs=cfg.dataset.num_sample_config,
+                sampler=sampler,
             ) 
             if train else 
             partial(
@@ -174,6 +187,8 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
                 num_sample_configs=cfg.dataset.eval_num_sample_config
             ) 
         )
+        
+        
         loader_train = DataLoader(dataset, batch_size=batch_size,
                                   shuffle=shuffle, 
                                   num_workers=cfg.num_workers,
