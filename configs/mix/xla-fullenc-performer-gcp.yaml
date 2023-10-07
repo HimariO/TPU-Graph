@@ -1,5 +1,5 @@
-out_dir: tests/mix-performer-fullenc
-num_workers: 8
+out_dir: tests/mix-xla-performer-fullenc
+num_workers: 1
 num_threads: 16
 debug: false
 wandb:
@@ -24,7 +24,7 @@ dataset:
   edge_encoder_name: DummyEdge
   edge_encoder_bn: False
   input_feat_key: op_feat_enc_i
-  cache_in_memory: false
+  cache_in_memory: true
 
 posenc_SignNet:
   enable: True
@@ -48,9 +48,9 @@ posenc_RWSE:
 
 train:
   mode: custom_tpu
-  batch_size: 2
-  eval_period: 8
-  ckpt_period: 32
+  batch_size: 3
+  eval_period: 16
+  ckpt_period: 50
   sampler: full_batch
   auto_resume: true
 

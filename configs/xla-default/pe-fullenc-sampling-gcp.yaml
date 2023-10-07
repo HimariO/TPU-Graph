@@ -1,5 +1,5 @@
-out_dir: tests/xla-random-fullenc-ft
-num_workers: 0
+out_dir: tests/xla-default-pe-fullenc-sampling
+num_workers: 2
 num_threads: 16
 debug: false
 wandb:
@@ -7,15 +7,15 @@ wandb:
   entity: togglec
   project: tpu-graph-v2
 dataset:
-  name: MixTPUGraphsNpz
-  format: PyG-MixTPUGraphsNpz
+  name: TPUGraphsNpz
+  format: PyG-TPUGraphsNpz
   task: graph
   task_type: ranking
   transductive: False
-  dir: /home/ron/Projects/TPU-Graph/datasets/
+  dir: /home/ron_zhu/TPU-Graph/datasets/
   source: xla
-  search: default+random
-  num_sample_config: 24
+  search: default
+  num_sample_config: 32
   eval_num_sample_config: 96
   node_encoder: True
   node_encoder_name: SignNet+RWSE
@@ -24,7 +24,7 @@ dataset:
   edge_encoder_name: DummyEdge
   edge_encoder_bn: False
   input_feat_key: op_feat_enc_i
-  cache_in_memory: false
+  cache_in_memory: true
   config_sampler: IntervalSampler
 
 posenc_SignNet:
@@ -49,8 +49,8 @@ posenc_RWSE:
 
 train:
   mode: custom_tpu
-  batch_size: 2
-  eval_period: 2
+  batch_size: 4
+  eval_period: 32
   ckpt_period: 100
   sampler: full_batch
   auto_resume: true
@@ -72,14 +72,11 @@ gnn:
   agg: mean
   normalize_adj: False
   dim_feat_enc: 244
-  enc_config: true
-  freeze_body: false
+  enc_config: True
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 20000
+  max_epoch: 5000
 share:
   dim_in: 160
-  num_splits: 6
 device: cuda
-model_ckpt: xla-rand-1599.ckpt
