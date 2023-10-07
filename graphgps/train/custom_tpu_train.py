@@ -422,8 +422,12 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
     # emb_table = History(500000000, 1)
     for cur_epoch in range(start_epoch, cfg.optim.max_epoch):
         start_time = time.perf_counter()
-        train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, model.history,
-                    cfg.optim.batch_accumulation)
+        try:
+            train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, model.history,
+                        cfg.optim.batch_accumulation)
+        except KeyboardInterrupt:
+            save_ckpt(model, optimizer, scheduler, cur_epoch)
+            break
         perf[0].append(loggers[0].write_epoch(cur_epoch))
 
         if is_eval_epoch(cur_epoch) or first_run_epoch:

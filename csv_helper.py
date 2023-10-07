@@ -1,6 +1,7 @@
 import os
 import glob
-from collections import Counter
+from pprint import pprint
+from collections import Counter, defaultdict
 from itertools import combinations, permutations
 from typing import *
 
@@ -11,6 +12,7 @@ import scipy
 import numpy as np
 import networkx as nx
 import pandas as pd
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 from loguru import logger
 
@@ -140,7 +142,7 @@ OPCODE = {
 @logger.catch
 def draw_graph(graph_file):
     ignores = ['parameter', 'get-tuple-element', 'tuple', 'constant']
-    # ignores = []
+    ignores = []
     code2op = {v: k for k, v in OPCODE.items()}
     np_graph = np.load(graph_file)
     
@@ -157,7 +159,8 @@ def draw_graph(graph_file):
         op_cnts[code2op[op]] += 1
         if code2op[op] in ignores:
             continue
-        graph['node_name'][i] = f"[{i}] {code2op[op]}"
+        graph['node_name'][i] = f"{code2op[op]}"
+        # graph['node_name'][i] = f"[{i}] {code2op[op]}"
 
     # Create a directed graph
     G = nx.DiGraph()
@@ -166,9 +169,18 @@ def draw_graph(graph_file):
     for node_name in graph["node_name"]:
         G.add_node(node_name)
 
+    parent_types = defaultdict(Counter)
+    chd_types = defaultdict(Counter)
     for edge in graph["edges"]:
         from_node, to_node = edge
         G.add_edge(graph["node_name"][from_node], graph["node_name"][to_node])
+        parent_types[graph["node_name"][to_node]][graph["node_name"][from_node]] += 1
+        chd_types[graph["node_name"][from_node]][graph["node_name"][to_node]] += 1
+    
+    logger.info('op-parents')
+    pprint(dict(parent_types))
+    logger.info('op-childrens')
+    pprint(dict(chd_types))
 
     # Create a layout for the nodes
     pos = nx.spring_layout(G)
@@ -183,7 +195,7 @@ def draw_graph(graph_file):
     # # Show the graph
     # plt.axis("off")
     # plt.show()
-    nx.write_gexf(G, graph_file.replace(".npz", ".gexf"))
+    # nx.write_gexf(G, graph_file.replace(".npz", ".gexf"))
 
 
 @logger.catch
@@ -308,16 +320,19 @@ def rankaggr_lp(ranks):
     idx = lambda i, j: n_candidates * i + j
 
     # constraints for every pair
-    pairwise_constraints = np.zeros(((n_candidates * (n_candidates - 1)) / 2,
-                                     n_candidates ** 2))
+    pairwise_constraints = np.zeros([
+        (n_candidates * (n_candidates - 1)) // 2,
+        n_candidates ** 2
+    ])
     for row, (i, j) in zip(pairwise_constraints,
                            combinations(range(n_candidates), 2)):
         row[[idx(i, j), idx(j, i)]] = 1
 
     # and for every cycle of length 3
-    triangle_constraints = np.zeros(((n_candidates * (n_candidates - 1) *
-                                     (n_candidates - 2)),
-                                     n_candidates ** 2))
+    triangle_constraints = np.zeros([
+        (n_candidates * (n_candidates - 1) * (n_candidates - 2)),
+        n_candidates ** 2
+    ])
     for row, (i, j, k) in zip(triangle_constraints,
                               permutations(range(n_candidates), 3)):
         row[[idx(i, j), idx(j, k), idx(k, i)]] = 1
@@ -328,14 +343,21 @@ def rankaggr_lp(ranks):
     constraint_signs = np.hstack([np.zeros(len(pairwise_constraints)),  # ==
                                   np.ones(len(triangle_constraints))])  # >=
 
-    obj, x, duals = lp_solve(c, constraints, constraint_rhs, constraint_signs,
-                             xint=range(1, 1 + n_candidates ** 2))
-    scipy.optimize.linprog(c, )
+    # obj, x, duals = lp_solve(c, constraints, constraint_rhs, constraint_signs,
+    #                          xint=range(1, 1 + n_candidates ** 2))
+    res = scipy.optimize.linprog(
+        c, 
+        A_ub=triangle_constraints, 
+        b_ub=np.ones(len(triangle_constraints)),
+        A_eq=pairwise_constraints,
+        b_eq=np.ones(len(pairwise_constraints)),
+    )
+    breakpoint()
 
-    x = np.array(x).reshape((n_candidates, n_candidates))
-    aggr_rank = x.sum(axis=1)
+    # x = np.array(x).reshape((n_candidates, n_candidates))
+    # aggr_rank = x.sum(axis=1)
 
-    return obj, aggr_rank
+    # return obj, aggr_rank
 
 
 def ensemble_csv(csvs: List[str], out_path: str):
@@ -351,10 +373,11 @@ def ensemble_csv(csvs: List[str], out_path: str):
             for rank, id in enumerate(config_ids):
                 score_mtx[judge][id] = float(rank)
 
-            print(score_mtx[-1])
+            # print(score_mtx[-1])
         score_mtx = np.asarray(score_mtx)
         # merge_score = ranky.pairwise(score_mtx.T)
         # merge_score = ranky.kemeny_young(score_mtx.T, workers=16)
+        rankaggr_lp(score_mtx)
         merge_score = score_mtx.mean(axis=0)
         new_rank = sorted([(score, i) for i, score in enumerate(merge_score)])
         return ';'.join(str(r[1]) for r in new_rank)
@@ -388,6 +411,103 @@ def ensemble_csv(csvs: List[str], out_path: str):
     pd.DataFrame.from_dict(result).to_csv(out_path, index=False)
 
 
+def inpsect_dataset(root_dir, field='runtime'):
+    from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
+    dataset = TPUGraphsNpz(root_dir, source='xla', search='random')
+    dataset._norm_op_feat = False
+    config_feats = []
+    code2name = {v: k for k, v in OPCODE.items()}
+    
+    for i in tqdm(range(len(dataset))):
+        graph = dataset[i]
+        logger.info(f'Graph: {graph.graph_name}')
+        if (graph.y < 1e-6).all():
+            continue
+        
+        if field == 'runtime':
+            panels = 4
+            plt.subplot(panels, 1, 1)
+            plt.title(graph.graph_name)
+            plt.hist(graph.y, bins=100)
+            
+            m = graph.y.size(0)
+            ordered = graph.y.sort().values
+            # breakpoint()
+            plt.subplot(panels, 1, 2)
+            plt.title(f"{graph.graph_name} first half")
+            plt.hist(ordered[:m // 2], bins=100)
+            plt.subplot(panels, 1, 3)
+            plt.title(f"{graph.graph_name} second half")
+            plt.hist(ordered[m // 2:], bins=100)
+            
+            plt.subplot(panels, 1, 4)
+            plt.title(f"{graph.graph_name} first querter")
+            plt.hist(ordered[:m // 4], bins=100)
+            
+            plt.show()
+        elif field == 'config':
+
+            def color_map(layout_ind):
+                colors = torch.tensor([
+                    [227, 51, 39],   # #e32727
+                    [227, 167, 39],  # #e3a727
+                    [136, 227, 39],  # #88e327
+                    [39, 227, 193],  # #27e3c1
+                    [39, 70, 227],   # #273de3
+                    [174, 39, 227],  # #ae27e3
+                    [0, 0, 0],
+                ], dtype=torch.uint8)
+                return colors[layout_ind]
+            
+            num_config = graph.num_config
+            config_nodes = graph.num_config_idx
+            config_feats = graph.config_feats.view(num_config, config_nodes, -1)
+            
+            m = min(10, num_config)
+            for j, single_config in enumerate(config_feats[20: 20+m]):
+                plt.subplot(m, 1, j + 1)
+                plt.imshow(color_map(single_config.int().T))
+            # plt.tight_layout()
+            plt.show()
+        elif field == 'op_feat':
+            op2feat = defaultdict(list)
+            configurables = graph.config_idx.int().tolist()
+            op_cnter = Counter()
+            prev = defaultdict(lambda: None)
+
+            num_config = graph.num_config
+            config_nodes = graph.num_config_idx
+            config_feats = graph.config_feats.view(num_config, config_nodes, -1)
+
+            for i, (opcode, feat) in enumerate(zip(graph.op_code.int(), graph.op_feats)):
+                op_name = code2name[int(opcode)]
+                op_cnter[op_name] += 1
+                if i not in configurables:
+                    continue
+                stuff = feat.int()
+                cfeat = config_feats[:10, configurables.index(i)]
+                if len(op2feat[op_name]) < 4 and (prev[op_name] is None or (stuff != prev[op_name]).any()):
+                    if prev[op_name] is not None and op_name == 'reshape':
+                        print(stuff != prev[op_name])
+                    prev[op_name] = stuff
+                    stuff = {
+                        'shape_dimensions': stuff[21:29],
+                        'dimensions': stuff[31:37],
+                        'window_size': stuff[37:43],
+                        'convolution_dim_numbers': stuff[93:107],
+                        'slice_dims': stuff[109:121],
+                        'layout_minor_to_major': stuff[134:],
+                        'all': stuff,
+                        'config': cfeat.int(),
+                    }
+                    stuff = {k: v.tolist() if k != 'all' else v for k, v in stuff.items()}
+                    op2feat[op_name].append(stuff)
+            # op2feat = {k: torch.stack(v) for k, v in op2feat.items()}
+            pprint(op_cnter)
+            pprint(dict(op2feat), width=100)
+            input()
+
+
 if __name__ == '__main__':
     fire.Fire({
         overwrite.__name__: overwrite,
@@ -395,4 +515,5 @@ if __name__ == '__main__':
         int8_config_feat.__name__: int8_config_feat,
         draw_graph.__name__: draw_graph,
         ensemble_csv.__name__: ensemble_csv,
+        inpsect_dataset.__name__: inpsect_dataset,
     })

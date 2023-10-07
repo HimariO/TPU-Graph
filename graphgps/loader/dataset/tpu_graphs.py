@@ -129,7 +129,7 @@ class IntervalSampler:
     And this sampler pick only some subset that have similiary runtimes that help model to learn more fine-grain different
     between different configs.
     """
-    def __init__(self, interval_size=512, interval_lifetime=40) -> None:
+    def __init__(self, interval_size=512, interval_lifetime=20) -> None:
         self.interval_size = interval_size  # NOTE: this should be >= cfg.dataset.num_sample_config
         self.interval_lifetime = interval_lifetime
         self.lifetimes = defaultdict(lambda: 0)
@@ -164,8 +164,8 @@ class IntervalSampler:
     
     def resample(self, graph: Data, num_sample_configs: int):
         all_zero = (graph.y < 1e-6).all()
-        # if all_zero or random.random() < 0.33:  # runtime can't be sort
-        #     return torch.randint(0, graph.num_config.item(), (num_sample_configs,))
+        if all_zero or random.random() < 0.5:  # runtime can't be sort
+            return torch.randint(0, graph.num_config.item(), (num_sample_configs,))
         
         ind = f"{graph.graph_name}_{graph.source_dataset}"
         if self.lifetimes[ind] <= 0:
@@ -212,6 +212,7 @@ class TPUGraphsNpz(Dataset):
         self.epoch_multiply = 1
         self.cache_in_memory = cache_in_memory
         self._cache = {}
+        self._norm_op_feat = True
         super().__init__(root, transform, pre_transform, pre_filter)
         self.meta
         self.data = Data(
@@ -359,9 +360,11 @@ class TPUGraphsNpz(Dataset):
             data = torch.load(pt_file)
             if isinstance(data.partition_idx, int):  # HACK: habdle the case that PyGemo not able to convert int to tensor
                 data.partition_idx = torch.tensor(data.partition_idx)
-            op_feats_mean = self.meta.op_feat_mean
-            op_feats_std = self.meta.op_feat_std
-            data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
+            
+            if self._norm_op_feat:
+                op_feats_mean = self.meta.op_feat_mean
+                op_feats_std = self.meta.op_feat_std
+                data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
             
             if self.cache_in_memory:
                 self._cache[idx] = copy.deepcopy(data)
