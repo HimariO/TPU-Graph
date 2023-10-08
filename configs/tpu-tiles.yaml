@@ -1,0 +1,54 @@
+out_dir: tests/xla-tile
+num_workers: 0
+num_threads: 16
+debug: false
+wandb:
+  use: false
+  entity: togglec
+  project: tpu-graph-v2
+dataset:
+  name: TPUGraphsNpz
+  format: PyG-TPUGraphsNpz
+  task: graph
+  task_type: ranking
+  transductive: False
+  dir: /home/ron/Projects/TPU-Graph/datasets/
+  source: xla
+  search: random
+  tpu_task: tile
+  num_sample_config:  64
+  eval_num_sample_config: 128
+  input_feat_key: op_feat_enc_i
+  cache_in_memory: true
+train:
+  mode: custom_tpu
+  batch_size: 96
+  eval_period: 8
+  ckpt_period: 100
+  sampler: full_batch
+model:
+  type: custom_tpu_gnn
+  loss_fun: cross_entropy
+  edge_decoding: dot
+  graph_pooling: add
+gnn:
+  layers_pre_mp: 1
+  layers_mp: 3
+  layers_post_mp: 2
+  dim_inner: 256
+  layer_type: sageconv
+  stage_type: skipsum
+  batchnorm: False
+  act: prelu
+  dropout: 0.1
+  agg: mean
+  normalize_adj: False
+  dim_feat_enc: 160
+  enc_tile_config: true
+optim:
+  optimizer: adam
+  base_lr: 0.0001
+  max_epoch: 5000
+share:
+  dim_in: 286
+device: cuda

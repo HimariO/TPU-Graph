@@ -150,6 +150,7 @@ if __name__ == '__main__':
             model, 
             input_feat_key=cfg.dataset.input_feat_key,
             enc_config=cfg.gnn.enc_config,
+            enc_tile_config=cfg.gnn.enc_tile_config,
         ) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
         
         if cfg.train.mode == 'inference-tpu':  # Include all configs in test time.

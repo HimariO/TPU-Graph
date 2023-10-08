@@ -129,7 +129,7 @@ class IntervalSampler:
     And this sampler pick only some subset that have similiary runtimes that help model to learn more fine-grain different
     between different configs.
     """
-    def __init__(self, interval_size=512, interval_lifetime=20) -> None:
+    def __init__(self, interval_size=512, interval_lifetime=10) -> None:
         self.interval_size = interval_size  # NOTE: this should be >= cfg.dataset.num_sample_config
         self.interval_lifetime = interval_lifetime
         self.lifetimes = defaultdict(lambda: 0)
@@ -201,6 +201,7 @@ class TPUGraphsNpz(Dataset):
           pre_filter: Optional[Callable] = None,
           source: str = 'nlp',  # 'nlp' or 'xla'
           search: str = 'random',  # 'random' or 'default'
+          task: str = 'layout',
           cache_in_memory: bool = False,
         ):
         assert source in ('nlp', 'xla')
@@ -209,6 +210,7 @@ class TPUGraphsNpz(Dataset):
         self.thres = thres
         self.source = source
         self.search = search
+        self.task = task
         self.epoch_multiply = 1
         self.cache_in_memory = cache_in_memory
         self._cache = {}
@@ -248,7 +250,7 @@ class TPUGraphsNpz(Dataset):
                 if isinstance(data, Data):
                     op_feats.append(data.op_feats)
                     num_node = data.op_feats.size(0)
-                    num_cfgs = data.config_feats.size(0)
+                    num_cfgs = data.num_config
                     total_nodes += num_node
                     total_unq_segs += num_node // self.thres + 1
                     total_segs += (num_node // self.thres + 1) * num_cfgs
@@ -275,7 +277,10 @@ class TPUGraphsNpz(Dataset):
         
     @property
     def raw_file_names(self):
-        pattern = osp.join(self.raw_dir, f"npz/layout/{self.source}/{self.search}/**", '*.npz')
+        if self.task == "layout":
+            pattern = osp.join(self.raw_dir, f"npz/layout/{self.source}/{self.search}/**", '*.npz')
+        else:
+            pattern = osp.join(self.raw_dir, f"npz/tile/xla/**", '*.npz')
         raw_dir = self.raw_dir
         if not raw_dir.endswith(osp.sep):
             raw_dir += osp.sep
@@ -284,13 +289,13 @@ class TPUGraphsNpz(Dataset):
 
     @property
     def processed_file_names(self):
-        files = [f'{self.source}_{self.search}_data_{i}.pt' for i in range(len(self.raw_file_names))]
-        files.append(f'{self.source}_{self.search}_split_dict.pt')
+        if self.task == "layout":
+            files = [f'{self.source}_{self.search}_data_{i}.pt' for i in range(len(self.raw_file_names))]
+            files.append(f'{self.source}_{self.search}_split_dict.pt')
+        else:
+            files = [f'xla_{self.task}_data_{i}.pt' for i in range(len(self.raw_file_names))]
+            files.append(f'xla_{self.task}_split_dict.pt')
         return files
-
-    # def download(self):
-    #     # Download to `self.raw_dir`.
-    #     path = download_url(url, self.raw_dir)
 
     def process(self):
         split_names = ['train', 'valid', 'test']
@@ -298,7 +303,10 @@ class TPUGraphsNpz(Dataset):
         parts_cnt = 0
         
         for idx, raw_path in enumerate(tqdm(self.raw_paths)):
-            out_path = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt')
+            if self.task == 'layout':
+                out_path = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt')
+            else:
+                out_path = osp.join(self.processed_dir, f'xla_{self.task}_data_{idx}.pt')
             split_name = osp.basename(osp.dirname(raw_path))
             split_dict[split_name].append(idx)
 
@@ -312,19 +320,6 @@ class TPUGraphsNpz(Dataset):
             if "edge_index" not in np_file:
                 print('error in', raw_path)
             
-            edge_index = torch.tensor(np_file["edge_index"].T)
-            runtime = torch.tensor(np_file["config_runtime"])
-            op = torch.tensor(np_file["node_feat"])
-            op_code = torch.tensor(np_file["node_opcode"])
-            config_feats = torch.tensor(np_file["node_config_feat"])
-            config_feats = config_feats.view(-1, config_feats.shape[-1])
-            config_idx = torch.tensor(np_file["node_config_ids"])  # node-indies of configurable nodes
-            num_config = torch.tensor(np_file["node_config_feat"].shape[0])
-            num_config_idx = torch.tensor(np_file["node_config_feat"].shape[1])  # number of configurable nodes
-
-            if -2**7 <= config_feats.min() and config_feats.min() <= 2**7:
-                config_feats = config_feats.to(torch.int8)
-            
             num_nodes = torch.tensor(np_file["node_feat"].shape[0])
             num_parts = num_nodes // self.thres + 1
             interval = num_nodes // num_parts
@@ -332,6 +327,28 @@ class TPUGraphsNpz(Dataset):
             if partptr[-1] != num_nodes:
                 partptr = torch.cat([partptr, torch.tensor([num_nodes])])
             graph_name = osp.basename(raw_path).replace('.npz', '')
+            
+            edge_index = torch.tensor(np_file["edge_index"].T)
+            runtime = torch.tensor(np_file["config_runtime"])
+            op = torch.tensor(np_file["node_feat"])
+            op_code = torch.tensor(np_file["node_opcode"])
+
+            if self.task == 'layout':
+                config_feats = torch.tensor(np_file["node_config_feat"])  # (c, nc, 18)
+                config_feats = config_feats.view(-1, config_feats.shape[-1])
+                config_idx = torch.tensor(np_file["node_config_ids"])  # node-indies of configurable nodes
+                num_config = torch.tensor(np_file["node_config_feat"].shape[0])
+                num_config_idx = torch.tensor(np_file["node_config_feat"].shape[1])  # number of configurable nodes
+            else:
+                config_feats = torch.tensor(np_file["config_feat"])  # (c, 24)
+                config_feats = config_feats.unsqueeze(dim=1).repeat([1, num_nodes, 1])
+                config_feats = config_feats.view(-1, config_feats.shape[-1])
+                config_idx = torch.arange(0, num_nodes)
+                num_config = torch.tensor(np_file["config_feat"].shape[0])
+                num_config_idx = torch.tensor(num_nodes)  # number of configurable nodes
+
+            if -2**7 <= config_feats.min() and config_feats.min() <= 2**7:
+                config_feats = config_feats.to(torch.int8)
             
             data = Data(edge_index=edge_index, op_feats=op, op_code=op_code, 
                         config_feats=config_feats, config_idx=config_idx,
@@ -355,8 +372,10 @@ class TPUGraphsNpz(Dataset):
             # print('take from cache ', idx)
             data = copy.deepcopy(self._cache[idx])
         else:
-            pt_file = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt')
-            # print(f"[{getattr(self, 'split_name', '?')}]Load {pt_file}, {len(self._cache)}")
+            if self.task == 'layout':
+                pt_file = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_{idx}.pt')
+            else:
+                pt_file = osp.join(self.processed_dir, f'xla_{self.task}_data_{idx}.pt')
             data = torch.load(pt_file)
             if isinstance(data.partition_idx, int):  # HACK: habdle the case that PyGemo not able to convert int to tensor
                 data.partition_idx = torch.tensor(data.partition_idx)
@@ -369,7 +388,7 @@ class TPUGraphsNpz(Dataset):
             if self.cache_in_memory:
                 self._cache[idx] = copy.deepcopy(data)
         data.config_feats = data.config_feats.float()
-        data.source_dataset = f"{self.source}-{self.search}-{idx}"
+        data.source_dataset = f"{self.source}-{self.search}-{idx}" if self.task == 'layout' else f"xla-tile-{idx}"
         return data
     
     def get_idx_split(self):

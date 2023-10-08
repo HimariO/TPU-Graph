@@ -371,6 +371,7 @@ def preformat_TPUGraphsNpz(dataset_dir, pre_transforms=None):
         dataset_dir, 
         source=cfg.dataset.get('source', 'nlp'),
         search=cfg.dataset.get('search', 'random'),
+        task=cfg.dataset.get('tpu_task', 'layout'),
         cache_in_memory=cfg.dataset.cache_in_memory,
         pre_transform=pre_transforms,
     )

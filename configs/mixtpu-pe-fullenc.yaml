@@ -3,7 +3,7 @@ num_workers: 0
 num_threads: 16
 debug: false
 wandb:
-  use: true
+  use: false
   entity: togglec
   project: tpu-graph-v2
 dataset:

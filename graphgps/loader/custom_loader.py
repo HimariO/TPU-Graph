@@ -82,7 +82,7 @@ def batch_sample_graph_segs(batch: Batch, num_sample_config=32):
                 if isinstance(item, torch.Tensor) and item.size(0) == N:
                     # get subset of node features
                     data[key] = item.narrow(0, start, length)
-                elif isinstance(item, torch.Tensor) and item.size(0) == E:
+                elif isinstance(item, torch.Tensor) and item.size(0) == E and item.ndim > 1:
                     # get subset of edge features
                     data[key] = item[edge_idx]
                 else:

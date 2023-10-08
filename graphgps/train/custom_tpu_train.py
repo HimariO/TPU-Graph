@@ -256,7 +256,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 for key, item in data:
                     if isinstance(item, torch.Tensor) and item.size(0) == N:
                         data[key] = item.narrow(0, start, length)
-                    elif isinstance(item, torch.Tensor) and item.size(0) == E:
+                    elif isinstance(item, torch.Tensor) and item.size(0) == E and item.ndim > 1:
                         data[key] = item[edge_idx]
                     else:
                         data[key] = item

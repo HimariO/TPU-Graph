@@ -125,7 +125,7 @@ class TPUModel(torch.nn.Module):
     """
     Wrapper to handle feature embedding/encoding
     """
-    def __init__(self, model, input_feat_key=None, enc_config=False):
+    def __init__(self, model, input_feat_key=None, enc_config=False, enc_tile_config=False):
         super().__init__()
         self.model = model
         self.emb = nn.Embedding(128, 128, max_norm=True)
@@ -138,9 +138,15 @@ class TPUModel(torch.nn.Module):
                 nn.Linear(180, 32, bias=True),
                 nn.BatchNorm1d(32),
             )
+        if enc_tile_config:
+            self.config_map = nn.Sequential(
+                nn.Linear(336, 32, bias=True),
+                nn.BatchNorm1d(32),
+            )
         
         self.input_feat_key = input_feat_key
         self.enc_config = enc_config
+        self.enc_tile_config = enc_tile_config
     
     def fourier_enc(self, ten: Tensor, scales=[-1, 0, 1, 2, 3, 4, 5, 6]) -> Tensor:
         """
@@ -160,6 +166,9 @@ class TPUModel(torch.nn.Module):
         batch.split = 'train'
         if self.enc_config:
             config_feats = self.fourier_enc(batch.config_feats, scales=[-1, 0, 1, 2, 3])
+            config_feats = self.config_map(config_feats)
+        elif self.enc_tile_config:
+            config_feats = self.fourier_enc(batch.config_feats, scales=[-1, 0, 1, 2, 3, 4, 5])
             config_feats = self.config_map(config_feats)
         else:
             config_feats = batch.config_feats * self.config_weights
