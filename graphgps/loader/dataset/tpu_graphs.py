@@ -347,7 +347,7 @@ class TPUGraphsNpz(Dataset):
                 num_config = torch.tensor(np_file["config_feat"].shape[0])
                 num_config_idx = torch.tensor(num_nodes)  # number of configurable nodes
 
-            if -2**7 <= config_feats.min() and config_feats.min() <= 2**7:
+            if -2**7 <= config_feats.min() and config_feats.max() <= 2**7:
                 config_feats = config_feats.to(torch.int8)
             
             data = Data(edge_index=edge_index, op_feats=op, op_code=op_code, 

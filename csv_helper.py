@@ -264,13 +264,21 @@ def strip_table(ckpt):
 
 
 def int8_config_feat(dir):
-    files = glob.glob(os.path.join(dir, '*.pt'))
+    files = glob.glob(os.path.join(dir, 'xla_tile*.pt'))
+    int16 = 0
+    int8 = 0
     for f in tqdm(files):
         if "_data" in f:
             data = torch.load(f)
-            if -2**7 <= data.config_feats.min() and data.config_feats.min() <= 2**7:
+            if -2**7 <= data.config_feats.min() and data.config_feats.max() <= 2**7:
                 data.config_feats = data.config_feats.to(torch.int8)
                 torch.save(data, f)
+                int8 += 1
+            elif -2**15 <= data.config_feats.min() and data.config_feats.max() <= 2**15:
+                data.config_feats = data.config_feats.to(torch.int16)
+                torch.save(data, f)
+                int16 += 1
+    print(int8, int16)
 
 
 def overwrite(csv_a, csv_b, out_path):
@@ -413,7 +421,7 @@ def ensemble_csv(csvs: List[str], out_path: str):
 
 def inpsect_dataset(root_dir, field='runtime'):
     from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
-    dataset = TPUGraphsNpz(root_dir, source='xla', search='random')
+    dataset = TPUGraphsNpz(root_dir, source='xla', search='default', task='tile')
     dataset._norm_op_feat = False
     config_feats = []
     code2name = {v: k for k, v in OPCODE.items()}
@@ -487,8 +495,8 @@ def inpsect_dataset(root_dir, field='runtime'):
                 stuff = feat.int()
                 cfeat = config_feats[:10, configurables.index(i)]
                 if len(op2feat[op_name]) < 4 and (prev[op_name] is None or (stuff != prev[op_name]).any()):
-                    if prev[op_name] is not None and op_name == 'reshape':
-                        print(stuff != prev[op_name])
+                    # if prev[op_name] is not None and op_name == 'reshape':
+                    #     print(stuff != prev[op_name])
                     prev[op_name] = stuff
                     stuff = {
                         'shape_dimensions': stuff[21:29],
@@ -497,14 +505,21 @@ def inpsect_dataset(root_dir, field='runtime'):
                         'convolution_dim_numbers': stuff[93:107],
                         'slice_dims': stuff[109:121],
                         'layout_minor_to_major': stuff[134:],
-                        'all': stuff,
+                        # 'all': stuff,
                         'config': cfeat.int(),
                     }
+                    """
+                    NOTE: 
+                    The layout configuration of a convolution/dot node specifies only the "first two dimensions" 
+                    because of the 2D nature of registers on a TPU. 
+                    The other dimensions are essentially outer loops that do not matter to the speed of the program.
+                    """
                     stuff = {k: v.tolist() if k != 'all' else v for k, v in stuff.items()}
                     op2feat[op_name].append(stuff)
             # op2feat = {k: torch.stack(v) for k, v in op2feat.items()}
             pprint(op_cnter)
             pprint(dict(op2feat), width=100)
+            print(f"configurabels: {config_nodes}/{graph.op_code.size(0)}")
             input()
 
 

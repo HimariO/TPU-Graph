@@ -347,6 +347,8 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 
                 ordered = set((rt, ind) for rt, ind in zip(runtimes, indies))
                 ordered = sorted(ordered)
+                if cfg.dataset.get('tpu_task', 'layout') == 'tile':
+                    ordered = ordered[:10]
                 cfg_rank_str = ";".join([str(o[1]) for o in ordered])
                 
                 exact_inorder = all([o[1] == i for i, o in enumerate(ordered)])
