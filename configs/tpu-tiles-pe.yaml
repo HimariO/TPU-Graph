@@ -1,5 +1,5 @@
 out_dir: tests/xla-tile-pe
-num_workers: 2
+num_workers: 1
 num_threads: 16
 debug: false
 wandb:
@@ -49,7 +49,7 @@ posenc_RWSE:
   raw_norm_type: BatchNorm
 
 train:
-  mode: custom_tpu
+  mode: inference-tpu
   batch_size: 16
   eval_period: 8
   ckpt_period: 100
@@ -80,3 +80,4 @@ optim:
 share:
   dim_in: 160
 device: cuda
+model_ckpt: xla-tile-71.ckpt

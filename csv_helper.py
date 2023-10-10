@@ -291,6 +291,7 @@ def overwrite(csv_a, csv_b, out_path):
     common_column = 'ID'
     rows_to_overwrite = a_df[common_column].isin(b_df[common_column])
     print(rows_to_overwrite)
+    print(a_df.loc[rows_to_overwrite])
     print(b_df)
 
     # Step 3: Overwrite the selected rows in a_df with corresponding rows from b_df
@@ -421,7 +422,7 @@ def ensemble_csv(csvs: List[str], out_path: str):
 
 def inpsect_dataset(root_dir, field='runtime'):
     from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
-    dataset = TPUGraphsNpz(root_dir, source='xla', search='default', task='tile')
+    dataset = TPUGraphsNpz(root_dir, source='nlp', search='default', task='layout')
     dataset._norm_op_feat = False
     config_feats = []
     code2name = {v: k for k, v in OPCODE.items()}
@@ -517,7 +518,7 @@ def inpsect_dataset(root_dir, field='runtime'):
                     stuff = {k: v.tolist() if k != 'all' else v for k, v in stuff.items()}
                     op2feat[op_name].append(stuff)
             # op2feat = {k: torch.stack(v) for k, v in op2feat.items()}
-            pprint(op_cnter)
+            # pprint(op_cnter)
             pprint(dict(op2feat), width=100)
             print(f"configurabels: {config_nodes}/{graph.op_code.size(0)}")
             input()

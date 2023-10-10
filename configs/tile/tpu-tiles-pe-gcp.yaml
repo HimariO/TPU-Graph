@@ -76,7 +76,7 @@ gnn:
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 200
+  max_epoch: 250
 share:
   dim_in: 160
 device: cuda
