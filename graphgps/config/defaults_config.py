@@ -1,3 +1,4 @@
+from yacs.config import CfgNode as CN
 from torch_geometric.graphgym.register import register_config
 
 
@@ -45,6 +46,11 @@ def extended_cfg(cfg):
     cfg.dataset.eval_num_sample_config = 512
     cfg.dataset.input_feat_key = None
     cfg.dataset.config_sampler = ''
+    
+    cfg.dataset.khop = CN()
+    cfg.dataset.khop.use = False
+    cfg.dataset.khop.hops = 1
+    cfg.dataset.khop.bidirect = False
 
     cfg.debug = False
     cfg.model_ckpt = ''

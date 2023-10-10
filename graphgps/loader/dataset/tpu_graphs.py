@@ -7,11 +7,12 @@ import os.path as osp
 from dataclasses import dataclass
 from collections import defaultdict
 from itertools import product, accumulate
-from typing import Optional, Callable, List, Dict
+from typing import *
 
 import numpy as np
 import torch
 from tqdm import tqdm
+from torch import Tensor
 from torch_geometric.data import (
   InMemoryDataset,
   Dataset,
@@ -20,7 +21,7 @@ from torch_geometric.data import (
   extract_tar, 
   extract_zip
 )
-from torch_geometric.utils import remove_isolated_nodes
+from torch_geometric.utils import k_hop_subgraph
 from torch_sparse import SparseTensor
 
 
@@ -135,33 +136,6 @@ class IntervalSampler:
         self.lifetimes = defaultdict(lambda: 0)
         self.intervals = {}
     
-    def _resample(self, ind: int, graph: Data):
-        all_zero = (graph.y < 1e-6).all()
-        if all_zero:  # runtime can't be sort
-            return graph
-        
-        if self.lifetimes[ind] <= 0:
-            n = graph.y.size(0)
-            _, indices = graph.y.sort()
-            low = random.randint(0, max(0, n - 1 - self.interval_size))
-            hi = min(n - 1, low + self.interval_size)
-            self.intervals[ind] = indices[low: hi]
-            self.lifetimes[ind] = self.interval_lifetime
-        else:
-            self.lifetimes[ind] -= 1
-        
-        new_graph = copy.deepcopy(graph)
-        new_graph.y = new_graph.y[self.intervals[ind]]
-        
-        feat_dim = new_graph.config_feats.size(-1)
-        new_graph.config_feats = new_graph.config_feats.view(
-            new_graph.num_config, -1, feat_dim)
-        new_graph.config_feats = new_graph.config_feats[self.intervals[ind]]
-        new_graph.config_feats = new_graph.config_feats.view(-1, feat_dim)
-        
-        new_graph.num_config = new_graph.y.size(0)
-        return new_graph
-    
     def resample(self, graph: Data, num_sample_configs: int):
         all_zero = (graph.y < 1e-6).all()
         if all_zero or random.random() < 0.5:  # runtime can't be sort
@@ -182,6 +156,57 @@ class IntervalSampler:
         sample_idx = self.intervals[ind][resample_idx]
         graph.y[sample_idx]
         return sample_idx
+
+
+class KeepKHop:
+
+    def __init__(self, hops=2, bidirect=False) -> None:
+        """
+        bidirect: 
+            find the k-hop neighbor on a birectional version of the graph, but not actually modify the graph
+        """
+        self.hops = hops
+        self.bidirect = bidirect
+    
+    def __call__(self, graph: Data) -> Data:
+        assert hasattr(graph, 'config_idx')
+        src_edge_idx = graph.edge_index
+        if self.bidirect:
+            src_edge_idx = torch.cat([
+                    src_edge_idx, 
+                    torch.stack([src_edge_idx[1, :], src_edge_idx[0, :]], dim=0),
+                ], 
+                dim=1
+            )
+        
+        subset, edge_index, mapping, edge_mask = k_hop_subgraph(
+            graph.config_idx, 
+            self.hops, 
+            src_edge_idx, 
+            relabel_nodes=True
+        )
+        if self.bidirect:
+            num_edge = edge_index.size(1)
+            graph.edge_index = edge_index[:, :num_edge // 2]
+        else:
+            graph.edge_index = edge_index
+        # NOTE: keep config_feats untouch, since the relative order of confiurable nodes is the same in new graph.
+        graph.config_idx = mapping
+        graph.num_config_idx = torch.tensor(len(mapping))
+        graph.num_nodes = torch.tensor(len(subset))
+        graph.partptr = torch.cat(
+            [
+                graph.partptr[graph.partptr < graph.num_nodes], 
+                torch.tensor([graph.num_nodes])
+            ], 
+            dim=0
+        )
+        for k in ['pestat_RWSE','eigvecs_sn', 'eigvals_sn', 'op_feats', 'op_code', 'op_feat_enc_i']:
+            if hasattr(graph, k):
+                val = getattr(graph, k)
+                setattr(graph, k, val[subset])
+        
+        return graph
 
 
 class TPUGraphsNpz(Dataset):
@@ -323,6 +348,7 @@ class TPUGraphsNpz(Dataset):
             num_nodes = torch.tensor(np_file["node_feat"].shape[0])
             num_parts = num_nodes // self.thres + 1
             interval = num_nodes // num_parts
+            # NOTE: node_id within [partptr[i], partptr[i + 1]) is belong to graph-segment-i
             partptr = torch.arange(0, num_nodes, interval+1)  # TODO: Find a better way to partition graph according to topologic 
             if partptr[-1] != num_nodes:
                 partptr = torch.cat([partptr, torch.tensor([num_nodes])])
@@ -349,6 +375,8 @@ class TPUGraphsNpz(Dataset):
 
             if -2**7 <= config_feats.min() and config_feats.max() <= 2**7:
                 config_feats = config_feats.to(torch.int8)
+            elif -2**15 <= config_feats.min() and config_feats.max() <= 2**15:
+                config_feats = config_feats.to(torch.int16)
             
             data = Data(edge_index=edge_index, op_feats=op, op_code=op_code, 
                         config_feats=config_feats, config_idx=config_idx,
@@ -389,6 +417,8 @@ class TPUGraphsNpz(Dataset):
                 self._cache[idx] = copy.deepcopy(data)
         data.config_feats = data.config_feats.float()
         data.source_dataset = f"{self.source}-{self.search}-{idx}" if self.task == 'layout' else f"xla-tile-{idx}"
+        if self.transform:
+            data = self.transform(data)
         return data
     
     def get_idx_split(self):

@@ -17,7 +17,7 @@ from torch_geometric.graphgym.register import register_loader
 
 from graphgps.loader.dataset.malnet_tiny import MalNetTiny
 from graphgps.loader.dataset.malnet_large import MalNetLarge
-from graphgps.loader.dataset.tpu_graphs import TPUGraphs, TPUGraphsNpz, MixTPUGraphsNpz
+from graphgps.loader.dataset.tpu_graphs import TPUGraphs, TPUGraphsNpz, MixTPUGraphsNpz, KeepKHop
 from graphgps.loader.split_generator import (prepare_splits,
                                              set_dataset_splits)
 from graphgps.transform.posenc_stats import compute_posenc_stats
@@ -366,7 +366,13 @@ def preformat_TPUGraphs(dataset_dir):
     return dataset
 
 def preformat_TPUGraphsNpz(dataset_dir, pre_transforms=None):
-   
+    if cfg.dataset.khop.use:
+        transform = KeepKHop(
+            hops=cfg.dataset.khop.hops, 
+            bidirect=cfg.dataset.khop.bidirect
+        )
+    else:
+        transform = None
     dataset = TPUGraphsNpz(
         dataset_dir, 
         source=cfg.dataset.get('source', 'nlp'),
@@ -374,6 +380,7 @@ def preformat_TPUGraphsNpz(dataset_dir, pre_transforms=None):
         task=cfg.dataset.get('tpu_task', 'layout'),
         cache_in_memory=cfg.dataset.cache_in_memory,
         pre_transform=pre_transforms,
+        transform=transform,
     )
     dataset.name = 'TPUGraphsNpz'
     
