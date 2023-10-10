@@ -21,7 +21,7 @@ from torch_geometric.graphgym.register import register_train
 from torch_geometric.graphgym.utils.epoch import is_eval_epoch, is_ckpt_epoch
 from torch_geometric.data import Data
 from tqdm import tqdm
-from loguru import logger
+from loguru import logger as ulogger
 
 from graphgps.loss.subtoken_prediction_loss import subtoken_cross_entropy
 from graphgps.utils import cfg_to_dict, flatten_dict, make_wandb_name
@@ -57,7 +57,7 @@ def pairwise_hinge_loss(pred, true):
     return loss, pairwise_true[opa_indices], opa_preds
 
 
-@logger.catch(reraise=True)
+@ulogger.catch(reraise=True)
 def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table: History, batch_accumulation: int):
     model.train()
     optimizer.zero_grad()
@@ -234,7 +234,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
         batch.split = split
         true = batch.y
         batch_list = batch.to_data_list()
-        batch_seg = []
+        batch_seg = []  # each `Data` in the list = one segment from one graph's one config`
         batch_num_parts = []
 
         for i in range(len(batch_list)):
@@ -327,9 +327,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 for j in range(len(sampled_idx[i])):
                     pred[i, j, :] += res[part_cnt, :]
                     part_cnt += 1
-        
-        # batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
-        # batch_num_parts = batch_num_parts.view(-1, 1)
+
         extra_stats = {}
         if 'TPUGraphs' in cfg.dataset.name:
             pred = pred.view(-1, batch_num_sample)
@@ -337,25 +335,36 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
             loss = pairwise_hinge_loss_batch(pred, true)
             _true = true.detach().to('cpu')
             _pred = pred.detach().to('cpu')
-
+            
+            cur_task = cfg.dataset.get('tpu_task', 'layout')
             for batch_i, (runtimes, indies) in enumerate(zip(_pred, sampled_idx)):
                 runtimes = runtimes.cpu().tolist()
                 indies = indies.cpu().tolist()
                 
                 graph_name = batch_list[batch_i].graph_name
-                item_name = f"layout:{cfg.dataset.source}:{cfg.dataset.search}:{graph_name}"
+                if cur_task == 'layout':
+                    item_name = f"layout:{cfg.dataset.source}:{cfg.dataset.search}:{graph_name}"
+                else:
+                    item_name = f"tile:xla:{graph_name}"
                 
                 ordered = set((rt, ind) for rt, ind in zip(runtimes, indies))
                 ordered = sorted(ordered)
-                if cfg.dataset.get('tpu_task', 'layout') == 'tile':
-                    ordered = ordered[:10]
-                cfg_rank_str = ";".join([str(o[1]) for o in ordered])
                 
+                graph_configs = torch.cat([segs.config_feats.int() for segs in batch_seg], dim=0)
+                same_cfgs = all((graph_configs[j] == graph_configs[0]).all() for j in range(len(graph_configs)))
                 exact_inorder = all([o[1] == i for i, o in enumerate(ordered)])
-                if 'test' in split and (item_name in rankings or exact_inorder):
+                duplicated = item_name in rankings
+                if same_cfgs or exact_inorder:
+                    ulogger.warning(f"Weird prediction values detected! {same_cfgs}, {exact_inorder}, {batch.graph_name}")
+                abnorm = duplicated or (exact_inorder and not same_cfgs)
+                # HACK: xla-tile test set have some known issue, ignore it for now.
+                if 'test' in split and cur_task != 'tile' and abnorm:
                     breakpoint()
                     raise RuntimeError('Weird prediction values detected!')
                 
+                if cur_task == 'tile':
+                    ordered = ordered[:10]
+                cfg_rank_str = ";".join([str(o[1]) for o in ordered])
                 rankings[item_name] = cfg_rank_str
         else:
             loss, pred_score = compute_loss(pred, true)
@@ -562,7 +571,7 @@ def inference_only(loggers, loaders, model: TPUModel, optimizer=None, scheduler=
         if cfg.train.auto_resume:
             load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
     else:
-        logger.info(f"Load model weight from: {cfg.model_ckpt}")
+        ulogger.info(f"Load model weight from: {cfg.model_ckpt}")
         checkpoint = torch.load(cfg.model_ckpt, map_location='cpu')
         model.load_state_dict(checkpoint['model_state'], strict=False)
 
@@ -604,7 +613,7 @@ def valid_once(loggers, loaders, model: TPUModel, optimizer=None, scheduler=None
         if cfg.train.auto_resume:
             load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
     else:
-        logger.info(f"Load model weight from: {cfg.model_ckpt}")
+        ulogger.info(f"Load model weight from: {cfg.model_ckpt}")
         checkpoint = torch.load(cfg.model_ckpt, map_location='cpu')
         model.load_state_dict(checkpoint['model_state'], strict=False)
 
