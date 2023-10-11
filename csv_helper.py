@@ -372,7 +372,6 @@ def rankaggr_lp(ranks):
 def ensemble_csv(csvs: List[str], out_path: str):
     print('Ensemble CSVs: ', csvs)
 
-
     def merge(rank_strs: List[str]) -> str:
         print('merging: ', rank_strs)
         score_mtx = []
@@ -419,6 +418,42 @@ def ensemble_csv(csvs: List[str], out_path: str):
     
     pd.DataFrame.from_dict(result).to_csv(out_path, index=False)
 
+
+def ensemble_raw(pt_files: List[str], out_path: str):
+    id2scores = defaultdict(list)
+    for file in pt_files:
+        ranks: Dict[str, List] = torch.load(file)
+        for graph_id, predicts in ranks.items():
+            score_vec = [0] * len(predicts)
+            for runtime, item_id in predicts:
+                score_vec[item_id] = runtime
+            id2scores[graph_id].append(score_vec)
+    
+    def merge(score_mtx: List[List[float]]) -> str:
+        score_mtx = np.asarray(score_mtx)
+        score_mtx -= np.min(score_mtx, axis=1, keepdims=True)
+        score_mtx /= np.max(score_mtx, axis=1, keepdims=True)
+        # merge_score = ranky.pairwise(score_mtx.T)
+        # merge_score = ranky.kemeny_young(score_mtx.T, workers=16)
+        merge_score = score_mtx.mean(axis=0)
+        print('-' * 100)
+        print(score_mtx)
+        print(merge_score)
+        new_rank = sorted([(score, i) for i, score in enumerate(merge_score)])
+        return ';'.join(str(r[1]) for r in new_rank)
+    
+    updated_ranks = {}
+    for graph_id, score_mtx in tqdm(id2scores.items()):
+        if len(score_mtx) == 1:
+            raise ValueError('nothing to merge?')
+        updated_ranks[graph_id] = merge(score_mtx)
+    
+    result = {'ID': [], 'TopConfigs': []}
+    for k, v in updated_ranks.items():
+        result['ID'].append(k)
+        result['TopConfigs'].append(v)
+    pd.DataFrame.from_dict(result).to_csv(out_path, index=False)
+        
 
 def inpsect_dataset(root_dir, field='runtime'):
     from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
@@ -531,5 +566,6 @@ if __name__ == '__main__':
         int8_config_feat.__name__: int8_config_feat,
         draw_graph.__name__: draw_graph,
         ensemble_csv.__name__: ensemble_csv,
+        ensemble_raw.__name__: ensemble_raw,
         inpsect_dataset.__name__: inpsect_dataset,
     })

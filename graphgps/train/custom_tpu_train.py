@@ -364,8 +364,9 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 
                 if cur_task == 'tile':
                     ordered = ordered[:10]
-                cfg_rank_str = ";".join([str(o[1]) for o in ordered])
-                rankings[item_name] = cfg_rank_str
+                # cfg_rank_str = ";".join([str(o[1]) for o in ordered])
+                # rankings[item_name] = cfg_rank_str
+                rankings[item_name] = ordered
         else:
             loss, pred_score = compute_loss(pred, true)
             _true = true.detach().to('cpu')
@@ -587,11 +588,22 @@ def inference_only(loggers, loaders, model: TPUModel, optimizer=None, scheduler=
                                 split=split_names[i])
         
         if split_names[i] == 'test':
-            df_dict = {'ID': list(rankings.keys()), 'TopConfigs': list(rankings.values())}
+            df_dict = {
+                'ID': list(rankings.keys()), 
+                'TopConfigs': [
+                    ';'.join(str(ind) for runtime, ind in ranks)
+                    for ranks in rankings.values()
+                ]
+            }
             now = datetime.datetime.now()
             time_stamp = f"{now.year}{now.month:02}{now.day:02}_{int(now.timestamp())}"
             sub_file = os.path.join(cfg.out_dir, f'submission_{time_stamp}.csv')
             pd.DataFrame.from_dict(df_dict).to_csv(sub_file, index=False)
+            ulogger.info(f"Save subission csv to: {sub_file}")
+
+            sub_file = os.path.join(cfg.out_dir, f'submission_{time_stamp}.pt')
+            torch.save(rankings, sub_file)
+            ulogger.info(f"Save detail subission runtimes to: {sub_file}")
         
         perf[i].append(loggers[i].write_epoch(cur_epoch))
 
