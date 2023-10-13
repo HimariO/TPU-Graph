@@ -278,9 +278,12 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                         config_feats=data.config_feats_full[:, k, :], 
                         num_nodes=length
                     )
-                    for k in data.keys:
-                        if k not in unfold_g.keys:
-                            setattr(unfold_g, k, getattr(data, k))
+                    for key in data.keys:
+                        if key not in unfold_g.keys:
+                            setattr(unfold_g, key, getattr(data, key))
+                    for feat_key in cfg.dataset.extra_cfg_feat_keys:
+                        sampled = getattr(data, feat_key)[:, k, :]
+                        setattr(unfold_g, feat_key, sampled)
                     batch_seg.append(unfold_g)
 
         def partial_inference(batch_seg: List[Data]) -> torch.Tensor:
