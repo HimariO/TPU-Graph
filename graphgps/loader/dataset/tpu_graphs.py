@@ -130,7 +130,7 @@ class IntervalSampler:
     And this sampler pick only some subset that have similiary runtimes that help model to learn more fine-grain different
     between different configs.
     """
-    def __init__(self, interval_size=512, interval_lifetime=10) -> None:
+    def __init__(self, interval_size=512, interval_lifetime=1) -> None:
         self.interval_size = interval_size  # NOTE: this should be >= cfg.dataset.num_sample_config
         self.interval_lifetime = interval_lifetime
         self.lifetimes = defaultdict(lambda: 0)
