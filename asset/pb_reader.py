@@ -1,5 +1,6 @@
 import os
 import glob
+import multiprocessing as mp
 from termcolor import colored
 from itertools import product
 from collections import defaultdict
@@ -7,6 +8,7 @@ from typing import *
 
 import torch
 import numpy as np
+import pysnooper
 from tqdm import tqdm
 from numba import jit, prange
 from loguru import logger
@@ -140,9 +142,11 @@ def estimate_shape(
             feature['input_shape_2'][0] = 1  # scalar
         
         if hidden.id in layout_config:
-            feature['input_layout_1_align'] = bool((layout_config[hidden.id][:6] == config[6:12]).all())
+            input_layout = layout_config[hidden.id][:6]
+            feature['input_layout_1_align'] = bool((input_layout == config[6:12]).all())
         if kernel.id in layout_config:
-            feature['input_layout_2_align'] = bool((layout_config[kernel.id][:6] == config[6:12]).all())
+            input_layout = layout_config[kernel.id][:6]
+            feature['input_layout_2_align'] = bool((layout_config[kernel.id][:6] == config[12:18]).all())
         
     if inst.shape.dimensions:
         feature['output_shape'] = map_shape(list(inst.shape.dimensions), config[:6])
@@ -162,6 +166,8 @@ def estimate_shape(
             flatten += [int(v)]
         else:
             raise ValueError(f"{type(v)}, {v}")
+    # if not (feature['input_layout_1_align'] and feature['input_layout_2_align']):
+    #     logger.info(f"mis-align! {[id2inst[j].opcode for j in inst.operand_ids]} -> {inst.opcode}")
     return flatten
 
 
@@ -213,18 +219,10 @@ def single_file_eda():
         print(hlo_obj.config_index_to_node)
 
 
-def create_dataset_feature(pt_glob, pb_dir):
-    data_src = defaultdict(dict)
-    pt_files = glob.glob(pt_glob, recursive=True)
-    for path in pt_files:
-        graph_name = torch.load(path).graph_name
-        data_src[graph_name]['pt'] = path
-    pb_files = glob.glob(os.path.join(pb_dir, "**", "*.pb"), recursive=True)
-    for path in pb_files:
-        graph_name = os.path.basename(path).replace(".pb", "")
-        data_src[graph_name]['pb'] = path
-    
-    for graph_name, file_dict in tqdm(data_src.items()):
+# @pysnooper.snoop()
+def process_graph(data_src):
+    bar = tqdm(data_src.items()) if len(data_src) > 1 else data_src.items()
+    for graph_name, file_dict in bar:
         pt_data = torch.load(file_dict['pt'])
         
         with open(file_dict['pb'], mode='rb') as f:
@@ -233,7 +231,6 @@ def create_dataset_feature(pt_glob, pb_dir):
             
             m = len(hlo_obj.module.computations)
             computes = hlo_obj.module.computations
-            configure_nodes = hlo_obj.config_index_to_node
             row2inst = {}
             id2inst = {}
             inst_list = []  # NOTE: according to host, this follow topologit order.
@@ -244,9 +241,25 @@ def create_dataset_feature(pt_glob, pb_dir):
                     id2inst[inst.id] = inst
                     inst_list.append(inst)
         
+        def signature(inst, node2cfg):
+            sig_arr = [inst.id, tuple(node2cfg[inst.id].tolist())]
+            for i in range(2):
+                if i >= len(inst.operand_ids):
+                    sig_arr.append(-1)
+                    sig_arr.append(-1)
+                else:
+                    sig_arr.append(inst.operand_ids[i])
+                    if inst.operand_ids[i] in node2cfg:
+                        sig_arr.append(tuple(node2cfg[inst.operand_ids[i]].tolist()))
+                    else:
+                        sig_arr.append(-1)
+            return tuple(sig_arr)
+        
+        cache_featrue = {}
         all_graph_cfgs = []
         config_feats = pt_data['config_feats'].view(
             pt_data['num_config'], -1, pt_data['config_feats'].size(-1))
+        
         for graph_config in config_feats:
             node2cfg = {
                 row2inst[node]: feat 
@@ -254,7 +267,12 @@ def create_dataset_feature(pt_glob, pb_dir):
             }
             per_graph_config = []
             for node in pt_data['config_idx'].tolist():
-                shape_feat = estimate_shape(inst_list[node], id2inst, node2cfg)
+                sig = signature(inst_list[node], node2cfg)
+                if sig in cache_featrue:
+                    shape_feat = cache_featrue[sig]
+                else:
+                    shape_feat = estimate_shape(inst_list[node], id2inst, node2cfg)
+                    cache_featrue[sig] = shape_feat
                 per_graph_config.append(shape_feat)
             all_graph_cfgs.append(per_graph_config)
         
@@ -266,8 +284,27 @@ def create_dataset_feature(pt_glob, pb_dir):
         elif -2**31 < all_graph_cfgs.min() and all_graph_cfgs.max() < 2**31:
             all_graph_cfgs = all_graph_cfgs.to(torch.int32)
         pt_data['extra_feat'] = all_graph_cfgs
-        # torch.save(file_dict['pt'])
-        
+        torch.save(pt_data, file_dict['pt'])
+
+
+def create_dataset_feature(pt_glob, pb_dir):
+    data_src = defaultdict(dict)
+    pt_files = glob.glob(pt_glob, recursive=True)
+    for path in pt_files:
+        graph_name = torch.load(path).graph_name
+        data_src[graph_name]['pt'] = path
+    pb_files = glob.glob(os.path.join(pb_dir, "**", "*.pb"), recursive=True)
+    for path in pb_files:
+        graph_name = os.path.basename(path).replace(".pb", "")
+        data_src[graph_name]['pb'] = path
+    
+    # process_graph(data_src)
+    with mp.Pool(processes=16) as pool:
+        breakdown = [{k: v} for k, v in data_src.items()]
+        done = 0
+        for _ in pool.imap_unordered(process_graph, breakdown):
+            done += 1
+            logger.info(f"{done}/{len(breakdown)}")
             
 
 if __name__ == '__main__':
