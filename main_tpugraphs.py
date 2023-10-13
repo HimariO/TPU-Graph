@@ -148,9 +148,11 @@ if __name__ == '__main__':
         model = create_model() # Standard GCN/SAGE
         model = TPUModel(
             model, 
-            input_feat_key=cfg.dataset.input_feat_key,
             enc_config=cfg.gnn.enc_config,
             enc_tile_config=cfg.gnn.enc_tile_config,
+            input_feat_key=cfg.dataset.input_feat_key,
+            extra_cfg_feat_keys=cfg.dataset.extra_cfg_feat_keys,
+            extra_cfg_feat_dims=cfg.dataset.extra_cfg_feat_dims,
         ) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
         
         if cfg.train.mode == 'inference-tpu':  # Include all configs in test time.

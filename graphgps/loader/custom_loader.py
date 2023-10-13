@@ -101,9 +101,12 @@ def batch_sample_graph_segs(batch: Batch, num_sample_config=32):
                         num_nodes=length,
                     )
 
-                    for k in data.keys:
-                        if k not in unfold_g.keys:
-                            setattr(unfold_g, k, getattr(data, k))
+                    for key in data.keys:
+                        if key not in unfold_g.keys:
+                            setattr(unfold_g, key, getattr(data, key))
+                    for feat_key in cfg.dataset.extra_cfg_feat_keys:
+                        sampled = getattr(data, feat_key)[:, k, :]
+                        setattr(unfold_g, feat_key, sampled)
                     batch_train_list.append(unfold_g)
 
     return (
@@ -151,6 +154,22 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False, sa
         )
         g.config_feats_full -= 1
         g.config_feats_full[g.config_idx, ...] = g.config_feats
+
+        for feat_key in cfg.dataset.extra_cfg_feat_keys:
+            extra_feat = getattr(g, feat_key).float()
+            extra_feat = extra_feat[sample_idx[-1], ...].transpose(0, 1)
+            full_feat = torch.zeros(
+                [
+                    g.num_nodes,
+                    len(sample_idx[-1]),
+                    extra_feat.shape[-1]
+                ], 
+                device=extra_feat.device
+            )
+            full_feat -= 1
+            full_feat[g.config_idx, ...] = extra_feat
+            setattr(g, feat_key, full_feat)
+        
         g.adj = SparseTensor(row=g.edge_index[0], col=g.edge_index[1], sparse_sizes=(g.num_nodes, g.num_nodes))
         processed_batch_list.append(g)
     # breakpoint()

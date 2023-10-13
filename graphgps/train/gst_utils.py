@@ -125,7 +125,15 @@ class TPUModel(torch.nn.Module):
     """
     Wrapper to handle feature embedding/encoding
     """
-    def __init__(self, model, input_feat_key=None, enc_config=False, enc_tile_config=False):
+    def __init__(
+            self, 
+            model,
+            input_feat_key=None,
+            enc_config=False,
+            enc_tile_config=False,
+            extra_cfg_feat_keys=None,
+            extra_cfg_feat_dims=0,
+        ):
         super().__init__()
         self.model = model
         self.emb = nn.Embedding(128, 128, max_norm=True)
@@ -142,6 +150,14 @@ class TPUModel(torch.nn.Module):
             self.config_map = nn.Sequential(
                 nn.Linear(336, 32, bias=True),
                 nn.BatchNorm1d(32),
+            )
+        if extra_cfg_feat_keys:
+            self.extra_cfg_feat_keys = extra_cfg_feat_keys
+            self.extra_map = nn.Sequential(
+                nn.Linear(extra_cfg_feat_dims, 128),
+                nn.ReLU(),
+                nn.BatchNorm1d(128),
+                nn.Linear(128, 32),
             )
         
         self.input_feat_key = input_feat_key
@@ -172,6 +188,13 @@ class TPUModel(torch.nn.Module):
             config_feats = self.config_map(config_feats)
         else:
             config_feats = batch.config_feats * self.config_weights
+        
+        if self.extra_cfg_feat_keys:
+            feats = [getattr(batch, k) for k in self.extra_cfg_feat_keys]
+            feats = torch.cat(feats, dim=-1)
+            feats = self.fourier_enc(feats, scales=[-1, 0, 1, 2, 3, 4, 5])
+            extra_cfg_feats = self.extra_map(feats)
+            config_feats = torch.cat([config_feats, extra_cfg_feats], dim=-1)
         
         if self.input_feat_key is None:
             batch.op_emb = self.emb(batch.op_code.long())

@@ -46,6 +46,8 @@ def extended_cfg(cfg):
     cfg.dataset.eval_num_sample_config = 512
     cfg.dataset.input_feat_key = None
     cfg.dataset.config_sampler = ''
+    cfg.dataset.extra_cfg_feat_keys = []
+    cfg.dataset.extra_cfg_feat_dims = 0
     
     cfg.dataset.khop = CN()
     cfg.dataset.khop.use = False
