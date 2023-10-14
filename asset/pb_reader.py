@@ -54,7 +54,73 @@ PrimitiveTypeBits = {
 }
 
 
-class ReadEstimator:
+class ReadEstimatorV1:
+    """
+    Estiamting number of read operation will happending while ignore the register padding behaivor.
+    """
+
+    @staticmethod
+    @jit(parallel=True)
+    def dot_read_ops(input_shape: List[int], input_layout: List[int], pagesize: int=128*8, reduce_dims=[0], fast=False):
+        """
+        ref: https://www.tensorflow.org/xla/operation_semantics#dotgeneral
+        """
+        ndim = len(input_shape)
+        step_sizes = {}
+        prev_dim = -1
+        for j in input_layout:  # minor to major
+            step_sizes[j] = max(1, prev_dim)
+            prev_dim = input_shape[j] * max(1, prev_dim)
+        
+        vec_size = 1
+        for i in reduce_dims:
+            vec_size *= input_shape[i]
+        prev_dim = -1
+        vec_step = {}
+        for j in reduce_dims[::-1]:
+            vec_step[j] = max(1, prev_dim)
+            prev_dim = input_shape[j] * max(1, prev_dim)
+        
+        batch_size = 1
+        batch_dims = []
+        for i in range(ndim):
+            if i not in reduce_dims:
+                batch_size *= input_shape[i]
+                batch_dims.append(i)
+        prev_dim = -1
+        batch_step = {}
+        for j in batch_dims[::-1]:
+            batch_step[j] = max(1, prev_dim)
+            prev_dim = input_shape[j] * max(1, prev_dim)
+        
+        last_access = -pagesize - 1
+        reads = 0
+        mul = max(1, batch_size // 2) if fast else 1
+        for b in prange(2 if fast else batch_size):
+            bq = b
+            # restore the batch dims's coordinates
+            batch_coord = []
+            for j in batch_dims:
+                batch_coord.append(bq // batch_step[j])
+                bq %= batch_step[j]
+            
+            for c in prange(vec_size):
+                cq = c
+                vec_coord = []
+                for j in reduce_dims:
+                    vec_coord.append(cq // vec_step[j])
+                    cq %= vec_step[j]
+
+                mem_loc = 0
+                for bi, j in zip(batch_coord, batch_dims):
+                    mem_loc += bi * step_sizes[j]
+                for vi, j in zip(vec_coord, reduce_dims):
+                    mem_loc += vi * step_sizes[j]
+                
+                if mem_loc - last_access > pagesize or mem_loc - last_access < 0:
+                    reads += 1
+                    last_access = mem_loc - mem_loc % pagesize
+        return reads * mul
 
     @staticmethod
     def conv_read_ops(input_shape: List[int], input_layout: List[int], 
@@ -217,7 +283,8 @@ def single_file_eda():
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/train/inference_mlperf_ssd_1200_batch_1.pb"
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/resnet_v1_50_official_batch_128_bf16.pb"
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/bert_multi_cased_L-12_H-768_A-12_batch_size_16_train.pb"
-    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/unet_3d.4x4.bf16.pb"
+    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/albert_en_xlarge_batch_size_16_test.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/unet_3d.4x4.bf16.pb"
 
     with open(pb_path, mode='rb') as f:
         hlo_obj = tuning_pb.ModuleTuningData()
@@ -239,7 +306,7 @@ def single_file_eda():
                     inst_chds[chd].append(inst.id)
 
         tunable = [
-            # 'dot',
+            'dot',
             # 'reshape',
             'convolution'
         ]
@@ -349,28 +416,43 @@ def create_dataset_feature(pt_glob, pb_dir):
             logger.info(f"{done}/{len(breakdown)}")
             
 
+def fast_mode_sanity_check():
+    # ratios = []
+    # for batch in [1, 2, 4, 8]:
+    #     for channel in [1, 4, 8, 16, 32]:
+    #         layout_1 = ReadEstimatorV1.conv_3d_read_ops([1,24,24,24,channel], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2])
+    #         layout_2 = ReadEstimatorV1.conv_3d_read_ops([1,24,24,24,channel], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2])
+    #         print(f"b = {batch}, c = {channel}, {layout_1} / {layout_2} = {layout_1 / layout_2}")
+    #         ratios.append(layout_1 / layout_2)
+    # print(ratios)
+
+    ratios = []
+    fast_mode = False
+    for b1, b2 in product([1, 2, 4, 8], [1, 2, 4, 8]):
+        layout_1 = ReadEstimatorV1.dot_read_ops([b1, b2, 32, 64], [0, 1, 2, 3], reduce_dims=[2,3], fast=fast_mode)
+        layout_2 = ReadEstimatorV1.dot_read_ops([b1, b2, 32, 64], [2, 3, 0, 1], reduce_dims=[2,3], fast=fast_mode)
+        print(f"b = {[b1, b2]}, {layout_1} / {layout_2} = {layout_1 / layout_2}")
+        ratios.append(layout_1 / layout_2)
+
 if __name__ == '__main__':
     warnings.filterwarnings('ignore')
 
     # single_file_eda()
-    create_dataset_feature(
-        "/home/ron_zhu/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
-        "/home/ron_zhu/data/tpugraphs/pb/pb/layout/xla/default/"
-    )
+    # create_dataset_feature(
+    #     "/home/ron_zhu/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
+    #     "/home/ron_zhu/data/tpugraphs/pb/pb/layout/xla/default/"
+    # )
     # create_dataset_feature(
     #     "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
     #     "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/"
     # )
 
-    # print(ReadEstimator.conv_read_ops([2,24,24,24,64], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
-    # print(ReadEstimator.conv_read_ops([2,24,24,24,64], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
-    # print(ReadEstimator.conv_3d_read_ops([2,24,24,24,64], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
-    # print(ReadEstimator.conv_3d_read_ops([2,24,24,24,64], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
-    ratios = []
-    for batch in [1, 2, 4, 8]:
-        for channel in [1, 4, 8, 16, 32]:
-            layout_1 = ReadEstimator.conv_3d_read_ops([1,24,24,24,channel], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2])
-            layout_2 = ReadEstimator.conv_3d_read_ops([1,24,24,24,channel], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2])
-            print(f"b = {batch}, c = {channel}, {layout_1} / {layout_2} = {layout_1 / layout_2}")
-            ratios.append(layout_1 / layout_2)
-    print(ratios)
+    # print(ReadEstimatorV1.conv_read_ops([2,24,24,24,64], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
+    # print(ReadEstimatorV1.conv_read_ops([2,24,24,24,64], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
+    # print(ReadEstimatorV1.conv_3d_read_ops([2,24,24,24,64], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
+    # print(ReadEstimatorV1.conv_3d_read_ops([2,24,24,24,64], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
+    
+    # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [2, 1, 0], reduce_dims=[1,0]))
+    # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [1, 0, 2], reduce_dims=[1,0]))
+    # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [0, 1, 2], reduce_dims=[1,0]))
+    fast_mode_sanity_check()

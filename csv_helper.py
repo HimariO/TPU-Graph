@@ -466,6 +466,7 @@ def inpsect_dataset(root_dir, field='runtime'):
         graph = dataset[i]
         logger.info(f'Graph: {graph.graph_name}')
         if (graph.y < 1e-6).all():
+            logger.warning(f"Skip test-set data that don't have runtime labels.")
             continue
         
         if field == 'runtime':
@@ -513,6 +514,28 @@ def inpsect_dataset(root_dir, field='runtime'):
                 plt.imshow(color_map(single_config.int().T))
             # plt.tight_layout()
             plt.show()
+        elif field == 'dup_config':
+            num_config = graph.num_config
+            config_nodes = graph.num_config_idx
+            config_feats = graph.config_feats.view(num_config, config_nodes, -1)
+            config_feats_2d = config_feats.view(num_config, -1).int().cuda()
+
+            handled = set()
+            dup_from = defaultdict(lambda: 0)
+            breakpoint()
+            for r, row in enumerate(config_feats_2d):
+                if r in handled:
+                    continue
+                handled.add(r)
+                delta = abs(config_feats_2d - row).sum(dim=1)
+                result = torch.sort(delta)
+                for i, v in zip(result.indices.cpu(), result.values.cpu()):
+                    if v > 0:
+                        break
+                    if i != r:
+                        handled.add(int(i))
+                        dup_from[r] += 1
+                pprint(dict(dup_from))
         elif field == 'op_feat':
             op2feat = defaultdict(list)
             configurables = graph.config_idx.int().tolist()
