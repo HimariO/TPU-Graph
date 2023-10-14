@@ -1,5 +1,6 @@
 import os
 import glob
+import warnings
 import multiprocessing as mp
 from termcolor import colored
 from itertools import product
@@ -10,7 +11,7 @@ import torch
 import numpy as np
 import pysnooper
 from tqdm import tqdm
-from numba import jit, prange
+from numba import jit, prange, NumbaPendingDeprecationWarning
 from loguru import logger
 import hlo_proto_py.tuning_pb2 as tuning_pb
 import hlo_proto_py.hlo_pb2 as hlo_pb
@@ -53,41 +54,82 @@ PrimitiveTypeBits = {
 }
 
 
-# @logger.catch
-@jit
-def conv_read_ops(input_shape: List[int], input_layout: List[int], 
-        pagesize: int=128*8, spatial_dims: Tuple[int]=(1, 2), kernel_size: Tuple[int]=(3, 3)):
-    """
-    Estiamte how many HBM -> register read operation will happend when we run certain conv op.
-    # [B H W C] -> minor(fastest varying index) [3 2 1 0] major
-    """
+class ReadEstimator:
+
+    @staticmethod
+    def conv_read_ops(input_shape: List[int], input_layout: List[int], 
+            pagesize: int=128*8, spatial_dims: Tuple[int]=(1, 2), kernel_size: Tuple[int]=(3, 3)):
+        """
+        Estiamte how many HBM -> register read operation will happend when we run certain conv op.
+        # [B H W C] -> minor(fastest varying index) [3 2 1 0] major
+        """
+        
+        ndim = len(input_shape)
+        step_sizes = {}
+        prev_dim = -1
+        for j in input_layout:
+            step_sizes[j] = max(1, prev_dim)
+            prev_dim = input_shape[j] * max(1, prev_dim)
+
+        last_access = -pagesize - 1
+        reads = 0
+        for b, c in product(range(input_shape[0]), range(input_shape[-1])):
+            window_stride = product(*[
+                range(input_shape[si] - ks) 
+                for si, ks in zip(spatial_dims, kernel_size)
+            ])
+            for zyx in window_stride:
+                kernel_coord = product(*[range(ks) for ks in kernel_size])
+                for kis in kernel_coord:
+                    mem_loc = step_sizes[0] * b
+                    mem_loc += step_sizes[ndim - 1] * c
+                    for dim, (si, ki) in enumerate(zip(spatial_dims, kis)):
+                        mem_loc += step_sizes[si] * (zyx[dim] + ki)
+                    if mem_loc - last_access > pagesize or mem_loc - last_access < 0:
+                        reads += 1
+                        last_access = mem_loc - mem_loc % pagesize
+
+        return reads
     
-    ndim = len(input_shape)
-    step_sizes = {}
-    prev_dim = -1
-    for j in input_layout:
-        step_sizes[j] = max(1, prev_dim)
-        prev_dim = input_shape[j] * max(1, prev_dim)
+    @staticmethod
+    @jit(parallel=True)
+    def conv_3d_read_ops(
+            input_shape: List[int], 
+            input_layout: List[int], 
+            pagesize: int=128*8, 
+            spatial_dims: Tuple[int]=(1, 2, 3), 
+            kernel_size: Tuple[int]=(2, 2, 2)
+        ):
+        
+        ndim = len(input_shape)
+        step_sizes = {}
+        prev_dim = -1
+        for j in input_layout:
+            step_sizes[j] = max(1, prev_dim)
+            prev_dim = input_shape[j] * max(1, prev_dim)
 
-    last_access = -pagesize - 1
-    reads = 0
-    for b, c in product(range(input_shape[0]), range(input_shape[2])):
-        window_stride = product(*[
-            range(input_shape[si] - ks) 
-            for si, ks in zip(spatial_dims, kernel_size)
-        ])
-        for zyx in window_stride:
-            kernel_coord = product(*[range(ks) for ks in kernel_size])
-            mem_loc = step_sizes[0] * b
-            mem_loc += step_sizes[ndim - 1] * c
-            for kis in kernel_coord:
-                for dim, (si, ki) in enumerate(zip(spatial_dims, kis)):
-                    mem_loc += step_sizes[si] * (zyx[dim] + ki)
-            if mem_loc - last_access > pagesize or mem_loc - last_access < 0:
-                reads += 1
-                last_access = mem_loc - mem_loc % pagesize
+        last_access = -pagesize - 1
+        reads = 0
+        for b in prange(input_shape[0]):
+            for c in prange(input_shape[-1]):
+                
+                for z in prange(input_shape[spatial_dims[0]] - kernel_size[0]):
+                    for y in prange(input_shape[spatial_dims[1]] - kernel_size[1]):
+                        for x in prange(input_shape[spatial_dims[2]] - kernel_size[2]):
+                            
+                            for k0 in prange(kernel_size[0]):
+                                for k1 in prange(kernel_size[1]):
+                                    for k2 in prange(kernel_size[2]):
+                                        mem_loc = step_sizes[0] * b
+                                        mem_loc += step_sizes[ndim - 1] * c
+                                        mem_loc += step_sizes[spatial_dims[0]] * (z + k0)
+                                        mem_loc += step_sizes[spatial_dims[1]] * (y + k1)
+                                        mem_loc += step_sizes[spatial_dims[2]] * (x + k2)
+                                        if mem_loc - last_access > pagesize or mem_loc - last_access < 0:
+                                            reads += 1
+                                            last_access = mem_loc - mem_loc % pagesize
 
-    return reads
+        return reads
 
 
 def estimate_shape(
@@ -174,8 +216,8 @@ def estimate_shape(
 def single_file_eda():
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/train/inference_mlperf_ssd_1200_batch_1.pb"
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/resnet_v1_50_official_batch_128_bf16.pb"
-    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/bert_multi_cased_L-12_H-768_A-12_batch_size_16_train.pb"
-    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/unet_3d.4x4.bf16.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/bert_multi_cased_L-12_H-768_A-12_batch_size_16_train.pb"
+    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/unet_3d.4x4.bf16.pb"
 
     with open(pb_path, mode='rb') as f:
         hlo_obj = tuning_pb.ModuleTuningData()
@@ -197,9 +239,9 @@ def single_file_eda():
                     inst_chds[chd].append(inst.id)
 
         tunable = [
-            'dot',
-            'reshape',
-            # 'convolution'
+            # 'dot',
+            # 'reshape',
+            'convolution'
         ]
         for i in range(m):
             comp: hlo_pb.HloComputationProto = computes[i]
@@ -299,7 +341,7 @@ def create_dataset_feature(pt_glob, pb_dir):
         data_src[graph_name]['pb'] = path
     
     # process_graph(data_src)
-    with mp.Pool(processes=16) as pool:
+    with mp.Pool(processes=8) as pool:
         breakdown = [{k: v} for k, v in data_src.items()]
         done = 0
         for _ in pool.imap_unordered(process_graph, breakdown):
@@ -308,10 +350,27 @@ def create_dataset_feature(pt_glob, pb_dir):
             
 
 if __name__ == '__main__':
+    warnings.filterwarnings('ignore')
+
     # single_file_eda()
     create_dataset_feature(
-        "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
-        "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/"
+        "/home/ron_zhu/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
+        "/home/ron_zhu/data/tpugraphs/pb/pb/layout/xla/default/"
     )
-    # print(conv_read_ops([2,24,24,24,512], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
-    # print(conv_read_ops([2,24,24,24,512], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
+    # create_dataset_feature(
+    #     "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
+    #     "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/"
+    # )
+
+    # print(ReadEstimator.conv_read_ops([2,24,24,24,64], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
+    # print(ReadEstimator.conv_read_ops([2,24,24,24,64], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
+    # print(ReadEstimator.conv_3d_read_ops([2,24,24,24,64], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
+    # print(ReadEstimator.conv_3d_read_ops([2,24,24,24,64], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
+    ratios = []
+    for batch in [1, 2, 4, 8]:
+        for channel in [1, 4, 8, 16, 32]:
+            layout_1 = ReadEstimator.conv_3d_read_ops([1,24,24,24,channel], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2])
+            layout_2 = ReadEstimator.conv_3d_read_ops([1,24,24,24,channel], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2])
+            print(f"b = {batch}, c = {channel}, {layout_1} / {layout_2} = {layout_1 / layout_2}")
+            ratios.append(layout_1 / layout_2)
+    print(ratios)
