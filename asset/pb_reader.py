@@ -60,7 +60,44 @@ class ReadEstimatorV1:
     """
 
     @staticmethod
-    @jit(parallel=True)
+    @jit(parallel=False)
+    def reshape_read_ops(input_shape: List[int], input_layout: List[int], dim_permut: List[int], pagesize: int=128*8):
+        # NOTE: actual output shape don't effect the performance, only dimension permuation does
+        ndim = len(input_shape)
+        nele = 1
+        step_sizes = {}
+        prev_dim = -1
+        for j in input_layout:  # minor to major
+            step_sizes[j] = max(1, prev_dim)
+            prev_dim = input_shape[j] * max(1, prev_dim)
+            nele *= input_shape[j]
+        
+        # output_laytout = [input_layout[i] for i in dim_permut]
+        access_pattern = [1]
+        for j in dim_permut[:-1]:
+            access_pattern.append(access_pattern[-1] * input_shape[j])
+        # access_pattern = access_pattern[::-1]
+        # print('input_shape', input_shape)
+        # print('access_pattern', access_pattern)
+
+        last_access = -pagesize - 1
+        reads = 0
+        for i in prange(nele):
+            coord = [0] * ndim  # major to minor
+            iq = i
+            for dim, j in zip(dim_permut, access_pattern):
+                coord[dim] = (iq // j) % input_shape[dim]
+            # print(coord)
+            mem_loc = 0
+            for dim, j in enumerate(coord):
+                mem_loc += step_sizes[dim] * j
+            if mem_loc - last_access > pagesize or mem_loc - last_access < 0:
+                reads += 1
+                last_access = mem_loc - mem_loc % pagesize
+        return reads
+
+    @staticmethod
+    @jit(parallel=False)
     def dot_read_ops(input_shape: List[int], input_layout: List[int], pagesize: int=128*8, reduce_dims=[0], fast=False):
         """
         ref: https://www.tensorflow.org/xla/operation_semantics#dotgeneral
@@ -158,7 +195,7 @@ class ReadEstimatorV1:
         return reads
     
     @staticmethod
-    @jit(parallel=True)
+    @jit(parallel=False)
     def conv_3d_read_ops(
             input_shape: List[int], 
             input_layout: List[int], 
@@ -235,7 +272,7 @@ def estimate_shape(
         else:
             feature['input_shape_1'][0] = 1  # scalar
         if hidden.id in layout_config:
-            feature['input_layout_1_align'] = bool((layout_config[hidden.id][:6] == config[6:12]).all())
+            feature['input_layout_1_align'] = bool((layout_config[hidden.id][:6] == config[6:12]).all()  or (config[6:12] == -1).all())
     elif inst.opcode in ["dot", "convolution"]:
         hidden = id2inst[inst.operand_ids[0]]  # lhs
         kernel = id2inst[inst.operand_ids[1]]  # rhs
@@ -251,10 +288,10 @@ def estimate_shape(
         
         if hidden.id in layout_config:
             input_layout = layout_config[hidden.id][:6]
-            feature['input_layout_1_align'] = bool((input_layout == config[6:12]).all())
+            feature['input_layout_1_align'] = bool((input_layout == config[6:12]).all() or (config[6:12] == -1).all())
         if kernel.id in layout_config:
             input_layout = layout_config[kernel.id][:6]
-            feature['input_layout_2_align'] = bool((layout_config[kernel.id][:6] == config[12:18]).all())
+            feature['input_layout_2_align'] = bool((layout_config[kernel.id][:6] == config[12:18]).all() or (config[12:18] == -1).all())
         
     if inst.shape.dimensions:
         feature['output_shape'] = map_shape(list(inst.shape.dimensions), config[:6])
@@ -306,9 +343,9 @@ def single_file_eda():
                     inst_chds[chd].append(inst.id)
 
         tunable = [
-            'dot',
-            # 'reshape',
-            'convolution'
+            # 'dot',
+            'reshape',
+            # 'convolution'
         ]
         for i in range(m):
             comp: hlo_pb.HloComputationProto = computes[i]
@@ -455,4 +492,7 @@ if __name__ == '__main__':
     # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [2, 1, 0], reduce_dims=[1,0]))
     # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [1, 0, 2], reduce_dims=[1,0]))
     # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [0, 1, 2], reduce_dims=[1,0]))
-    fast_mode_sanity_check()
+    # fast_mode_sanity_check()
+
+    print(ReadEstimatorV1.reshape_read_ops([4,2,3], [2,1,0], [0,2,1]))
+    print(ReadEstimatorV1.reshape_read_ops([40,200,30], [2,1,0], [0,2,1]))
