@@ -190,9 +190,12 @@ class TPUModel(torch.nn.Module):
             config_feats = batch.config_feats * self.config_weights
         
         if self.extra_cfg_feat_keys:
-            feats = [getattr(batch, k) for k in self.extra_cfg_feat_keys]
+            feats = []
+            for k in self.extra_cfg_feat_keys:
+                scales = [-1, 0, 1, 2, 3, 4, 5, 6, 7] if k == 'extra_read_ops_feat' else [-1, 0, 1, 2, 3, 4, 5]
+                fenc = self.fourier_enc(getattr(batch, k), scales=scales)
+                feats.append(fenc)
             feats = torch.cat(feats, dim=-1)
-            feats = self.fourier_enc(feats, scales=[-1, 0, 1, 2, 3, 4, 5])
             extra_cfg_feats = self.extra_map(feats)
             config_feats = torch.cat([config_feats, extra_cfg_feats], dim=-1)
         
