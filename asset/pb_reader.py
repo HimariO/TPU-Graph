@@ -62,45 +62,78 @@ class ReadEstimatorV1:
     
     @lru_cache(None)
     @staticmethod
-    @jit(parallel=False)
-    def reshape_read_ops(input_shape: List[int], input_layout: List[int], dim_permut: List[int]=[0], pagesize: int=128*8):
+    def reshape_read_ops(
+            input_shape: Tuple[int],
+            input_layout: Tuple[int],
+            output_shape: Tuple[int],
+            dim_permut: Tuple[int]=[0],
+            pagesize: int=128*8,
+            fast=False) -> int:
         # NOTE: actual output shape don't effect the performance, only dimension permuation does
-        ndim = len(input_shape)
+        ndim_in = len(input_shape)
+        ndim_out = len(output_shape)
         nele = 1
+        
         step_sizes = {}
         prev_dim = -1
         for j in input_layout:  # minor to major
-            step_sizes[j] = max(1, prev_dim)
+            step_sizes[j] = float(max(1, prev_dim))
             prev_dim = input_shape[j] * max(1, prev_dim)
             nele *= input_shape[j]
+        
+        if nele < pagesize:
+            return 1
+        
+        out_step_sizes = {}
+        prev_dim = -1
+        for j in range(ndim_out - 1, -1, -1):  # minor to major
+            out_step_sizes[j] = float(max(1, prev_dim))
+            prev_dim = output_shape[j] * max(1, prev_dim)
         
         # output_laytout = [input_layout[i] for i in dim_permut]
         access_pattern = [1]
         for j in dim_permut[:-1]:
-            access_pattern.append(access_pattern[-1] * input_shape[j])
-        # access_pattern = access_pattern[::-1]
-        # print('input_shape', input_shape)
-        # print('access_pattern', access_pattern)
+            access_pattern.append(access_pattern[-1] * output_shape[j])
+        in_acc_pattern = [1]
+        for j in input_shape[::-1][:-1]:
+            in_acc_pattern.append(in_acc_pattern[-1] * j)
+        
+        mul = 1
+        if fast:
+            argmax = input_shape.index(max(input_shape))
+            ratio = max(1, input_shape[argmax] // 32)
+            mul *= ratio
+            nele //= ratio
 
         last_access = -pagesize - 1
         reads = 0
         for i in prange(nele):
-            coord = [0] * ndim  # major to minor
+            dst_coord = [0] * ndim_out  # major to minor
             iq = i
             for dim, j in zip(dim_permut, access_pattern):
-                coord[dim] = (iq // j) % input_shape[dim]
-            # print(coord)
+                dst_coord[dim] = (iq // j) % output_shape[dim]
+            # HACK: we have to compute dst_1d in this way to avoid numba compile error
+            dst_1d = 0
+            for a, b in enumerate(dst_coord):
+                dst_1d += out_step_sizes[a] * b
+            dst_1d = int(dst_1d)
+            # print(i, dst_coord, dst_1d)
+            
+            src_coord = [0] * ndim_in
+            for dim, j in enumerate(in_acc_pattern[::-1]):
+                src_coord[dim] = dst_1d // j
+                dst_1d %= j
+            # print(src_coord)
             mem_loc = 0
-            for dim, j in enumerate(coord):
+            for dim, j in enumerate(src_coord):
                 mem_loc += step_sizes[dim] * j
             if mem_loc - last_access > pagesize or mem_loc - last_access < 0:
                 reads += 1
-                last_access = mem_loc - mem_loc % pagesize
-        return reads
+                last_access = mem_loc - int(mem_loc) % pagesize
+        return reads * int(mul)
 
     @lru_cache(None)
     @staticmethod
-    @jit(parallel=False)
     def dot_read_ops(input_shape: Tuple[int], input_layout: Tuple[int], pagesize: int=128*8, reduce_dims=[0], fast=False):
         """
         ref: https://www.tensorflow.org/xla/operation_semantics#dotgeneral
@@ -109,7 +142,7 @@ class ReadEstimatorV1:
         step_sizes = {}
         prev_dim = -1
         for j in input_layout:  # minor to major
-            step_sizes[j] = max(1, prev_dim)
+            step_sizes[j] = float(max(1, prev_dim))
             prev_dim = input_shape[j] * max(1, prev_dim)
         
         vec_size = 1
@@ -157,9 +190,9 @@ class ReadEstimatorV1:
                 for vi, j in zip(vec_coord, reduce_dims):
                     mem_loc += vi * step_sizes[j]
                 
-                if mem_loc - last_access > pagesize or mem_loc - last_access < 0:
+                if (mem_loc - last_access > pagesize) or (mem_loc - last_access < 0):
                     reads += 1
-                    last_access = mem_loc - mem_loc % pagesize
+                    last_access = mem_loc - (int(mem_loc) % pagesize)
         return reads * mul
 
     @staticmethod
@@ -199,7 +232,6 @@ class ReadEstimatorV1:
 
     @lru_cache(None)    
     @staticmethod
-    @jit(parallel=False)
     def conv_3d_read_ops(
             input_shape: Tuple[int], 
             input_layout: Tuple[int], 
@@ -207,20 +239,27 @@ class ReadEstimatorV1:
             spatial_dims: Tuple[int]=(1, 2, 3), 
             kernel_size: Tuple[int]=(2, 2, 2),
             fast=False,
-        ):
+        ) -> int:
         
         ndim = len(input_shape)
         bc_dims = [i for i in range(ndim) if i not in spatial_dims]
         step_sizes = {}
         prev_dim = -1
         for j in input_layout:
-            step_sizes[j] = max(1, prev_dim)
+            step_sizes[j] = float(max(1, prev_dim))
             prev_dim = input_shape[j] * max(1, prev_dim)
 
         last_access = -pagesize - 1
         reads = 0
         batch_size = 2 if fast else input_shape[bc_dims[0]]
         mul = max(1, batch_size // 2) if fast else 1
+        if fast:
+            bound = max(16, max(kernel_size))
+            input_shape = list(input_shape)
+            for i in spatial_dims:
+                if input_shape[i] > bound:
+                    mul *= input_shape[i] / bound
+                    input_shape[i] = bound
         for b in prange(batch_size):
             for c in prange(input_shape[bc_dims[1]]):
                 
@@ -236,15 +275,14 @@ class ReadEstimatorV1:
                                         mem_loc += step_sizes[spatial_dims[0]] * (z + k0)
                                         mem_loc += step_sizes[spatial_dims[1]] * (y + k1)
                                         mem_loc += step_sizes[spatial_dims[2]] * (x + k2)
-                                        if mem_loc - last_access > pagesize or mem_loc - last_access < 0:
+                                        if (mem_loc - last_access > pagesize) or (mem_loc - last_access < 0):
                                             reads += 1
-                                            last_access = mem_loc - mem_loc % pagesize
+                                            last_access = mem_loc - (int(mem_loc) % pagesize)
 
-        return reads * mul
+        return reads * int(mul)
     
     @lru_cache(None)
     @staticmethod
-    @jit(parallel=False)
     def conv_2d_read_ops(
             input_shape: Tuple[int], 
             input_layout: Tuple[int], 
@@ -252,19 +290,27 @@ class ReadEstimatorV1:
             spatial_dims: Tuple[int]=(1, 2), 
             kernel_size: Tuple[int]=(3, 3),
             fast=False
-        ):
+        ) -> int:
         ndim = len(input_shape)
         bc_dims = [i for i in range(ndim) if i not in spatial_dims]
         step_sizes = {}
         prev_dim = -1
         for j in input_layout:
-            step_sizes[j] = max(1, prev_dim)
+            step_sizes[j] = float(max(1, prev_dim))
             prev_dim = input_shape[j] * max(1, prev_dim)
 
-        last_access = -pagesize - 1
-        reads = 0
         batch_size = 2 if fast else input_shape[bc_dims[0]]
         mul = max(1, batch_size // 2) if fast else 1
+        if fast:
+            bound = max(24, max(kernel_size))
+            input_shape = list(input_shape)
+            for i in spatial_dims:
+                if input_shape[i] > bound:
+                    mul *= input_shape[i] / bound
+                    input_shape[i] = bound
+        
+        last_access = -pagesize - 1
+        reads = 0
         for b in prange(batch_size):
             for c in prange(input_shape[bc_dims[1]]):
                 
@@ -277,11 +323,11 @@ class ReadEstimatorV1:
                                 mem_loc += step_sizes[ndim - 1] * c
                                 mem_loc += step_sizes[spatial_dims[0]] * (z + k0)
                                 mem_loc += step_sizes[spatial_dims[1]] * (y + k1)
-                                if mem_loc - last_access > pagesize or mem_loc - last_access < 0:
+                                if (mem_loc - last_access > pagesize) or (mem_loc - last_access < 0):
                                     reads += 1
-                                    last_access = mem_loc - mem_loc % pagesize
+                                    last_access = mem_loc - (int(mem_loc) % pagesize)
 
-        return reads * mul
+        return reads * int(mul)
 
     @staticmethod
     def esitmate(
@@ -292,9 +338,7 @@ class ReadEstimatorV1:
             'in1_reads': 0,
             'in2_reads': 0,
         }
-        output_shape = tuple(inst.shape.dimensions)
         config = layout_config[inst.id].int().tolist()
-        ndim = len(output_shape)
         
         def cfg2layout(cfg, ndim):
             dims = list(range(ndim))
@@ -307,6 +351,8 @@ class ReadEstimatorV1:
                     layout.append(dims.pop())
             return tuple(layout)
         
+        output_shape = tuple(inst.shape.dimensions)
+        ndim = len(output_shape)
         out_layout = cfg2layout(config[:6], ndim)
         out_layout = tuple(out_layout)
         
@@ -315,7 +361,13 @@ class ReadEstimatorV1:
         in1_layout = cfg2layout(config[6:12], len(input_shape_1))
         
         if inst.opcode == "reshape":
-            features['in1_reads'] = ReadEstimatorV1.reshape_read_ops(input_shape_1, in1_layout, dim_permut=out_layout)
+            features['in1_reads'] = ReadEstimatorV1.reshape_read_ops(
+                input_shape_1,
+                in1_layout,
+                output_shape,
+                dim_permut=out_layout,
+                fast=True,
+            )
         else:
             input_2 = id2inst[inst.operand_ids[1]]
             input_shape_2 = tuple(input_2.shape.dimensions)
@@ -370,10 +422,10 @@ class ReadEstimatorV1:
                 reduce_dims = tuple(inst.dot_dimension_numbers.rhs_contracting_dimensions)
                 features['in2_reads'] = ReadEstimatorV1.dot_read_ops(input_shape_2, in2_layout, reduce_dims=reduce_dims, fast=True)
             
-            return [
-                max(1, features['in1_reads'] // 100) if features['in1_reads'] > 0 else 0,
-                max(1, features['in2_reads'] // 100) if features['in2_reads'] > 0 else 0,
-            ]
+        return [
+            max(1, features['in1_reads'] // 100) if features['in1_reads'] > 0 else 0,
+            max(1, features['in2_reads'] // 100) if features['in2_reads'] > 0 else 0,
+        ]
 
 
 def estimate_shape(
@@ -461,8 +513,8 @@ def single_file_eda():
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/train/inference_mlperf_ssd_1200_batch_1.pb"
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/resnet_v1_50_official_batch_128_bf16.pb"
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/bert_multi_cased_L-12_H-768_A-12_batch_size_16_train.pb"
-    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/albert_en_xlarge_batch_size_16_test.pb"
-    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/unet_3d.4x4.bf16.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/albert_en_xlarge_batch_size_16_test.pb"
+    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/unet_3d.4x4.bf16.pb"
 
     with open(pb_path, mode='rb') as f:
         hlo_obj = tuning_pb.ModuleTuningData()
@@ -484,9 +536,9 @@ def single_file_eda():
                     inst_chds[chd].append(inst.id)
 
         tunable = [
-            'dot',
-            # 'reshape',
-            'convolution'
+            # 'dot',
+            'reshape',
+            # 'convolution'
         ]
         for i in range(m):
             comp: hlo_pb.HloComputationProto = computes[i]
@@ -507,9 +559,12 @@ def single_file_eda():
 
 
 # @pysnooper.snoop()
-def process_graph(data_src):
+def process_graph(data_src, skip=-1):
     bar = tqdm(data_src.items()) if len(data_src) > 1 else data_src.items()
-    for graph_name, file_dict in bar:
+    for step, (graph_name, file_dict) in enumerate(bar):
+        if step < skip: 
+            logger.warning(f"Skip {graph_name}")
+            continue
         pt_data = torch.load(file_dict['pt'])
         
         with open(file_dict['pb'], mode='rb') as f:
@@ -548,14 +603,14 @@ def process_graph(data_src):
         config_feats = pt_data['config_feats'].view(
             pt_data['num_config'], -1, pt_data['config_feats'].size(-1))
         
-        for graph_config in config_feats:
+        for ci, graph_config in enumerate(config_feats):
             node2cfg = {
                 row2inst[node]: feat 
                 for node, feat in zip(pt_data['config_idx'].tolist(), graph_config)
             }
             per_graph_config = []
             per_graph_reads = []
-            for node in pt_data['config_idx'].tolist():
+            for ni, node in enumerate(pt_data['config_idx'].tolist()):
                 sig = signature(inst_list[node], node2cfg)
                 if sig in cache_featrue:
                     shape_feat = cache_featrue[sig]
@@ -566,6 +621,11 @@ def process_graph(data_src):
                 
                 reads_feat = ReadEstimatorV1.esitmate(inst_list[node], id2inst, node2cfg)
                 per_graph_reads.append(reads_feat)
+                if len(data_src) > 1:
+                    logger.info(
+                        f"{ci}/{len(config_feats)}, {ni}/{len(pt_data['config_idx'])},"
+                        f" {inst_list[node].opcode} {list(inst_list[node].shape.dimensions)}"
+                    )
             all_graph_cfgs.append(per_graph_config)
             all_graph_opreads.append(per_graph_reads)
         
@@ -581,12 +641,13 @@ def process_graph(data_src):
         all_graph_cfgs = torch.tensor(all_graph_cfgs)
         all_graph_opreads = torch.tensor(all_graph_opreads)
         pt_data['extra_feat'] = auto_dtype(all_graph_cfgs)
-        pt_data['extra_read_ops_feat'] = auto_dtype(all_graph_opreads)
+        pt_data['extra_read_ops_feat'] = all_graph_opreads.float()
         torch.save(pt_data, file_dict['pt'])
 
 
 @logger.catch(reraise=True)
 def create_dataset_feature(pt_glob, pb_dir):
+    logger.info(f'Scanning files in source folder: {pt_glob}')
     data_src = defaultdict(dict)
     pt_files = glob.glob(pt_glob, recursive=True)
     for path in pt_files:
@@ -597,13 +658,14 @@ def create_dataset_feature(pt_glob, pb_dir):
         graph_name = os.path.basename(path).replace(".pb", "")
         data_src[graph_name]['pb'] = path
     
-    process_graph(data_src)
-    # with mp.Pool(processes=16) as pool:
-    #     breakdown = [{k: v} for k, v in data_src.items()]
-    #     done = 0
-    #     for _ in pool.imap_unordered(process_graph, breakdown):
-    #         done += 1
-    #         logger.info(f"{done}/{len(breakdown)}")
+    logger.info(f'Start processing...')
+    # process_graph(data_src)
+    with mp.Pool(processes=16) as pool:
+        breakdown = [{k: v} for k, v in data_src.items()]
+        done = 0
+        for _ in pool.imap_unordered(process_graph, breakdown):
+            done += 1
+            logger.info(f"{done}/{len(breakdown)}")
             
 
 def fast_mode_sanity_check():
@@ -625,6 +687,7 @@ def fast_mode_sanity_check():
         ratios.append(layout_1 / layout_2)
 
 if __name__ == '__main__':
+    import time
     warnings.filterwarnings('ignore')
 
     # single_file_eda()
@@ -641,12 +704,18 @@ if __name__ == '__main__':
     # print(ReadEstimatorV1.conv_read_ops([2,24,24,24,64], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
     # print(ReadEstimatorV1.conv_3d_read_ops([2,24,24,24,64], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
     # print(ReadEstimatorV1.conv_3d_read_ops([2,24,24,24,64], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
-    print(ReadEstimatorV1.conv_2d_read_ops((2,24,24,64), (3,2,1,0), spatial_dims=(1,2), kernel_size=(2,2)))
+    
+    # t0 = time.time()
+    # print(ReadEstimatorV1.conv_2d_read_ops((2,24,24,64), (3,2,1,0), spatial_dims=(1,2), kernel_size=(2,2)))
+    # print(time.time() - t0)
+    # t0 = time.time()
+    # print(ReadEstimatorV1.conv_2d_read_ops((2, 100, 100, 64), (3,0,2,1), spatial_dims=(1,2), kernel_size=(3,3), fast=True))
+    # print(time.time() - t0)
     
     # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [2, 1, 0], reduce_dims=[1,0]))
     # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [1, 0, 2], reduce_dims=[1,0]))
     # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [0, 1, 2], reduce_dims=[1,0]))
     # fast_mode_sanity_check()
 
-    # print(ReadEstimatorV1.reshape_read_ops([4,2,3], [2,1,0], [0,2,1]))
-    # print(ReadEstimatorV1.reshape_read_ops((40,20,30), (2,1,0), (0,2,1)))
+    # print(ReadEstimatorV1.reshape_read_ops((4,2,3), (2,1,0), (8,3), (0, 1)))
+    # print(ReadEstimatorV1.reshape_read_ops((40,20,30), (2,1,0), (2,20,600),(0,2,1)))
