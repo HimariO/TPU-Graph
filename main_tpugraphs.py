@@ -156,7 +156,7 @@ if __name__ == '__main__':
         ) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
         
         if cfg.train.mode == 'inference-tpu':  # Include all configs in test time.
-            cfg.dataset.eval_num_sample_config = 1_000_000
+            cfg.dataset.eval_num_sample_config = cfg.dataset.inference_num_config_cap
             cfg.train.batch_size = 1
         elif cfg.train.mode == 'valid-tpu':  # Include all configs in test time.
             # cfg.dataset.eval_num_sample_config = 128

@@ -213,11 +213,11 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
 def eval_epoch(logger, loader, model: TPUModel, split='val'):
     model.eval()
     time_start = time.time()
-    num_sample_config = cfg.dataset.eval_num_sample_config
     
     loader_bar = tqdm(loader)
     loader_bar.set_description_str('Eval Epoch')
     rankings = {} # defaultdict(list)
+    labels = {}
     
     for batch in loader_bar:
         # batch, _ = preprocess_batch(batch, model, num_sample_config)
@@ -340,8 +340,9 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
             _pred = pred.detach().to('cpu')
             
             cur_task = cfg.dataset.get('tpu_task', 'layout')
-            for batch_i, (runtimes, indies) in enumerate(zip(_pred, sampled_idx)):
+            for batch_i, (runtimes, gt, indies) in enumerate(zip(_pred, _true, sampled_idx)):
                 runtimes = runtimes.cpu().tolist()
+                gt = gt.cpu().tolist()
                 indies = indies.cpu().tolist()
                 
                 graph_name = batch_list[batch_i].graph_name
@@ -352,6 +353,8 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 
                 ordered = set((rt, ind) for rt, ind in zip(runtimes, indies))
                 ordered = sorted(ordered)
+                ordered_gt = set((rt, ind) for rt, ind in zip(gt, indies))
+                ordered_gt = sorted(ordered)
                 
                 graph_configs = torch.cat([segs.config_feats.int() for segs in batch_seg], dim=0)
                 same_cfgs = all((graph_configs[j] == graph_configs[0]).all() for j in range(len(graph_configs)))
@@ -370,6 +373,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 # cfg_rank_str = ";".join([str(o[1]) for o in ordered])
                 # rankings[item_name] = cfg_rank_str
                 rankings[item_name] = ordered
+                labels[item_name] = ordered_gt
         else:
             loss, pred_score = compute_loss(pred, true)
             _true = true.detach().to('cpu')
@@ -382,7 +386,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                             dataset_name=cfg.dataset.name,
                             **extra_stats)
         time_start = time.time()
-    return rankings
+    return rankings, labels
 
 
 @register_train('custom_tpu')
@@ -585,28 +589,27 @@ def inference_only(loggers, loaders, model: TPUModel, optimizer=None, scheduler=
     cur_epoch = 0
 
     for i in range(0, num_splits):
-        if split_names[i] != 'test':
+        split_name = split_names[i]
+        if split_name != cfg.dataset.inference_split:
             continue
-        rankings = eval_epoch(loggers[i], loaders[i], model,
-                                split=split_names[i])
         
-        if split_names[i] == 'test':
-            df_dict = {
-                'ID': list(rankings.keys()), 
-                'TopConfigs': [
-                    ';'.join(str(ind) for runtime, ind in ranks)
-                    for ranks in rankings.values()
-                ]
-            }
-            now = datetime.datetime.now()
-            time_stamp = f"{now.year}{now.month:02}{now.day:02}_{int(now.timestamp())}"
-            sub_file = os.path.join(cfg.out_dir, f'submission_{time_stamp}.csv')
-            pd.DataFrame.from_dict(df_dict).to_csv(sub_file, index=False)
-            ulogger.info(f"Save subission csv to: {sub_file}")
+        rankings, labels = eval_epoch(loggers[i], loaders[i], model, split=split_name)
+        df_dict = {
+            'ID': list(rankings.keys()), 
+            'TopConfigs': [
+                ';'.join(str(ind) for runtime, ind in ranks)
+                for ranks in rankings.values()
+            ]
+        }
+        now = datetime.datetime.now()
+        time_stamp = f"{now.year}{now.month:02}{now.day:02}_{int(now.timestamp())}"
+        sub_file = os.path.join(cfg.out_dir, f'{split_name}_{time_stamp}.csv')
+        pd.DataFrame.from_dict(df_dict).to_csv(sub_file, index=False)
+        ulogger.info(f"Save subission csv to: {sub_file}")
 
-            sub_file = os.path.join(cfg.out_dir, f'submission_{time_stamp}.pt')
-            torch.save(rankings, sub_file)
-            ulogger.info(f"Save detail subission runtimes to: {sub_file}")
+        sub_file = os.path.join(cfg.out_dir, f'{split_name}_{time_stamp}.pt')
+        torch.save({'rankings': rankings, 'labels': labels}, sub_file)
+        ulogger.info(f"Save detail subission runtimes to: {sub_file}")
         
         perf[i].append(loggers[i].write_epoch(cur_epoch))
 

@@ -42,10 +42,14 @@ def extended_cfg(cfg):
     cfg.dataset.search = 'random'
     cfg.dataset.tpu_task = 'layout'
     cfg.dataset.cache_in_memory = False
+    cfg.dataset.inference_split = 'test'
+    cfg.dataset.inference_num_config_cap = 1_000_000
+
     cfg.dataset.num_sample_config = 32
     cfg.dataset.eval_num_sample_config = 512
-    cfg.dataset.input_feat_key = None
     cfg.dataset.config_sampler = ''
+
+    cfg.dataset.input_feat_key = None
     cfg.dataset.extra_cfg_feat_keys = []
     cfg.dataset.extra_cfg_feat_dims = 0
     

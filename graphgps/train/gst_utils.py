@@ -151,8 +151,9 @@ class TPUModel(torch.nn.Module):
                 nn.Linear(336, 32, bias=True),
                 nn.BatchNorm1d(32),
             )
-        if extra_cfg_feat_keys:
-            self.extra_cfg_feat_keys = extra_cfg_feat_keys
+        
+        self.extra_cfg_feat_keys = extra_cfg_feat_keys
+        if self.extra_cfg_feat_keys:
             self.extra_map = nn.Sequential(
                 nn.Linear(extra_cfg_feat_dims, 128),
                 nn.ReLU(),

@@ -24,7 +24,9 @@ dataset:
   edge_encoder_name: DummyEdge
   edge_encoder_bn: False
   input_feat_key: op_feat_enc_i
-  cache_in_memory: true
+  cache_in_memory: false
+  inference_split: valid
+  inference_num_config_cap: 2000
 
 posenc_SignNet:
   enable: True
