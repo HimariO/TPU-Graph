@@ -410,8 +410,8 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
     if cfg.train.auto_resume:
         start_epoch = load_ckpt(model, optimizer, scheduler, cfg.train.epoch_resume)
     if cfg.model_ckpt:
-        global logger
-        logger.info(f"Load model weight from: {cfg.model_ckpt}")
+        global ulogger
+        ulogger.info(f"Load model weight from: {cfg.model_ckpt}")
         checkpoint = torch.load(cfg.model_ckpt, map_location='cpu')
         model.load_state_dict(checkpoint['model_state'], strict=False)
     

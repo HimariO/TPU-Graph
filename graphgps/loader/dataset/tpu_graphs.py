@@ -22,6 +22,7 @@ from torch_geometric.data import (
   extract_zip
 )
 from torch_geometric.utils import k_hop_subgraph
+from torch_geometric.graphgym.config import cfg
 from torch_sparse import SparseTensor
 
 
@@ -152,9 +153,20 @@ class IntervalSampler:
         else:
             self.lifetimes[ind] -= 1
         
-        resample_idx = torch.randint(0, len(self.intervals[ind]), [num_sample_configs])
-        sample_idx = self.intervals[ind][resample_idx]
-        graph.y[sample_idx]
+        # resample_idx = torch.randint(0, len(self.intervals[ind]), [num_sample_configs])
+        resample_idx = torch.randperm(len(self.intervals[ind]))
+        sample_idx = self.intervals[ind][resample_idx[:num_sample_configs]]
+        
+        sample_cfg = graph.config_feats.view(graph.num_config, graph.num_config_idx, -1)
+        sample_cfg = sample_cfg[sample_idx, ...]
+        resample_ptr = num_sample_configs
+        for i, cfeat in enumerate(sample_cfg):
+            delta = torch.abs(sample_cfg[i + 1:] - cfeat).sum(axis=-1).sum(axis=-1)
+            mask = delta < 1e-6
+            if mask.any():
+                sample_idx[i + 1:][mask] = self.intervals[ind][resample_ptr: resample_ptr + mask.sum()]
+                resample_ptr += mask.sum()
+            # checked.add(i)
         return sample_idx
 
 
@@ -216,6 +228,7 @@ class TPUGraphsNpz(Dataset):
         'num_config', 'eigvecs_sn', 'config_idx', 'op_feats', 'y', 
         'num_nodes', 'partptr', 'partition_idx', 'op_code', 'eigvals_sn', 'graph_name', 'source_dataset',
     ]
+    EXTRA =  ["extra_feat", "extra_read_ops_feat"]
     
     def __init__(
           self, 
@@ -417,6 +430,10 @@ class TPUGraphsNpz(Dataset):
                 self._cache[idx] = copy.deepcopy(data)
         data.config_feats = data.config_feats.float()
         data.source_dataset = f"{self.source}-{self.search}-{idx}" if self.task == 'layout' else f"xla-tile-{idx}"
+
+        for key in self.EXTRA:
+            if key not in cfg.dataset.extra_cfg_feat_keys:
+                delattr(data, key)
         if self.transform:
             data = self.transform(data)
         return data
