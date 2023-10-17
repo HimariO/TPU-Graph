@@ -15,7 +15,7 @@ dataset:
   dir: /home/ron/Projects/TPU-Graph/datasets/
   source: xla
   search: default
-  num_sample_config: 32
+  num_sample_config: 8
   eval_num_sample_config: 96
   node_encoder: True
   node_encoder_name: SignNet+RWSE
