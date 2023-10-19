@@ -157,7 +157,7 @@ class TPUGraphPred(Dataset):
             self.labels[name] = torch.tensor(self.labels[name])
     
     def __len__(self):
-        if train:
+        if self.train:
             return len(self.graph_names) * 100
         else:
             return len(self.graph_names)
@@ -166,7 +166,7 @@ class TPUGraphPred(Dataset):
         name = self.graph_names[index % len(self.graph_names)]
         n = self.labels[name].size(0)
         logits = self.logits[name]
-        if train:
+        if self.train:
             cfg_idx = torch.randperm(n)[:self.num_sample]
         else:
             cfg_idx = torch.arange(0, n)
@@ -247,20 +247,20 @@ def ensemble(pred_files: List[str], ckpt: str, out_csv: str):
     model = LitEncoder.load_from_checkpoint(ckpt)
     model = model.to('cuda').eval()
     
-    test_set = TPUGraphPred(pred_files)
+    test_set = TPUGraphPred(pred_files, train=False)
     result = {}
     for i in range(len(test_set)):
         name = test_set.graph_names[i]
         models_pred, _ = test_set[i]
 
-        models_pred = models_pred.to('cuda')
-        y = model.forward((models_pred, None)).cpu()
+        models_pred = torch.unsqueeze(models_pred.to('cuda'), dim=0)
+        y = model.forward((models_pred, None), 0).cpu()[0]
         merged = []
         for config_id, score in enumerate(y):
             merged.append((float(score), config_id))
         merged = sorted(merged)
         new_rank = [str(i) for s, i in merged]
-        result[name] = "".join(new_rank)
+        result[name] = ";".join(new_rank)
     
     df_dict = {
         'ID': [], 
@@ -273,9 +273,17 @@ def ensemble(pred_files: List[str], ckpt: str, out_csv: str):
 
 
 if __name__ == '__main__':
-    # test_dataset()
-    train()
-    # insert_node_feature(
-    #     "datasets/TPUGraphsNpz/processed/xla_tile_data_*.pt", 
-    #     "feat-encoder.ckpt",
-    # )
+    from loguru import logger
+    with logger.catch():
+        # test_dataset()
+        # train()
+        # insert_node_feature(
+        #     "datasets/TPUGraphsNpz/processed/xla_tile_data_*.pt", 
+        #     "feat-encoder.ckpt",
+        # )
+        ensemble(
+            ["tests/xla-default-fullenc/tpu-pe-fullenc/test_20231019_1697729115.pt",
+            "tests/xla-default-fullenc-khop/tpu-pe-fullenc-khop/test_20231019_1697722716.pt"],
+            "lightning_logs/version_6/checkpoints/epoch=999-step=175000.ckpt",
+            "xla_def_meta_2.csv",
+        )
