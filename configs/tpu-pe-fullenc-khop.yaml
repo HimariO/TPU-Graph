@@ -29,8 +29,8 @@ dataset:
     use: true
     hops: 2
     bidirect: true
-  inference_split: valid
-  inference_num_config_cap: 2000
+  # inference_split: valid
+  # inference_num_config_cap: 2000
 
 posenc_SignNet:
   enable: True

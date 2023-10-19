@@ -1,9 +1,9 @@
 out_dir: tests/xla-default-fullenc
-num_workers: 1
+num_workers: 0
 num_threads: 16
 debug: false
 wandb:
-  use: true
+  use: false
   entity: togglec
   project: tpu-graph-v2
 dataset:
@@ -15,7 +15,7 @@ dataset:
   dir: /home/ron/Projects/TPU-Graph/datasets/
   source: xla
   search: default
-  num_sample_config: 8
+  num_sample_config: 32
   eval_num_sample_config: 96
   node_encoder: True
   node_encoder_name: SignNet+RWSE
@@ -25,8 +25,9 @@ dataset:
   edge_encoder_bn: False
   input_feat_key: op_feat_enc_i
   cache_in_memory: false
-  inference_split: valid
-  inference_num_config_cap: 2000
+  # inference_split: valid
+  # inference_num_config_cap: 2000
+  config_sampler: IntervalSampler
 
 posenc_SignNet:
   enable: True
