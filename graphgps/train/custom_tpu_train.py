@@ -42,7 +42,8 @@ def pairwise_hinge_loss_batch(pred, true):
     i_idx = torch.arange(num_preds).repeat(num_preds)
     j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
     pairwise_true = true[:,i_idx] > true[:,j_idx]
-    loss = torch.sum(torch.nn.functional.relu(0.1 - (pred[:,i_idx] - pred[:,j_idx])) * pairwise_true.float()) / batch_size
+    loss = torch.nn.functional.relu(0.1 - (pred[:,i_idx] - pred[:,j_idx])) * pairwise_true.float()
+    loss = torch.sum(loss) / batch_size
     return loss
 
 
@@ -66,7 +67,7 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
 
     if cfg.debug: print(f"@ Start of Epoch")
 
-    for iter, batch in enumerate(loader):
+    for iter, batch in enumerate(tqdm(loader)):
         if cfg.debug: print(f"@ iter-{iter} start")
         batch, sampled_idx = batch
         

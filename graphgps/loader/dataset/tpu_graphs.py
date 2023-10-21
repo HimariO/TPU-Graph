@@ -252,9 +252,10 @@ class TPUGraphsNpz(Dataset):
         self.epoch_multiply = 1
         self.cache_in_memory = cache_in_memory
         self._cache = {}
-        self._norm_op_feat = True
+        self._cache_limit = 80
+        self._norm_op_feat = False
         super().__init__(root, transform, pre_transform, pre_filter)
-        self.meta
+        # self.meta
         self.data = Data(
             edge_index=None,
             op_feats=None,
@@ -328,7 +329,13 @@ class TPUGraphsNpz(Dataset):
     @property
     def processed_file_names(self):
         if self.task == "layout":
-            files = [f'{self.source}_{self.search}_data_{i}.pt' for i in range(len(self.raw_file_names))]
+            pattern = osp.join(self.processed_dir, f'{self.source}_{self.search}_data_*.pt')
+            exist_files = len(glob.glob(pattern))
+            target_size = len(self.raw_file_names)
+            files = [
+                f'{self.source}_{self.search}_data_{i}.pt' 
+                for i in range(max(exist_files, target_size))
+            ]
             files.append(f'{self.source}_{self.search}_split_dict.pt')
         else:
             files = [f'xla_{self.task}_data_{i}.pt' for i in range(len(self.raw_file_names))]
@@ -426,14 +433,16 @@ class TPUGraphsNpz(Dataset):
                 op_feats_std = self.meta.op_feat_std
                 data.op_feats = (data.op_feats - op_feats_mean) / op_feats_std
             
-            if self.cache_in_memory:
+            for key in self.EXTRA:
+                if key in data.keys and (key not in cfg.dataset.extra_cfg_feat_keys):
+                    delattr(data, key)
+            
+            if self.cache_in_memory and len(self._cache) < self._cache_limit:
                 self._cache[idx] = copy.deepcopy(data)
+        
         data.config_feats = data.config_feats.float()
         data.source_dataset = f"{self.source}-{self.search}-{idx}" if self.task == 'layout' else f"xla-tile-{idx}"
 
-        for key in self.EXTRA:
-            if key not in cfg.dataset.extra_cfg_feat_keys:
-                delattr(data, key)
         if self.transform:
             data = self.transform(data)
         return data

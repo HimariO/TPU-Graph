@@ -1,4 +1,5 @@
 import os
+import math
 import glob
 from pprint import pprint
 from collections import Counter, defaultdict
@@ -198,62 +199,6 @@ def draw_graph(graph_file):
     # nx.write_gexf(G, graph_file.replace(".npz", ".gexf"))
 
 
-@logger.catch
-def _draw_graph(graph_file):
-    from graphviz import Digraph
-    # ignores = ['parameter']
-    ignores = []
-    code2op = {v: k for k, v in OPCODE.items()}
-    np_graph = np.load(graph_file)
-    
-    num_nodes = np_graph["node_feat"].shape[0]
-    print('num_nodes: ', num_nodes)
-    # breakpoint()
-    graph = {
-        "edges": np_graph['edge_index'].tolist(),
-        "node_name": [''] * num_nodes
-    }
-    node_config_ids = set(np_graph['node_config_ids'].tolist())
-    op_cnts = Counter()
-    for i, op in enumerate(np_graph['node_opcode']):
-        op_cnts[code2op[op]] += 1
-        if code2op[op] in ignores:
-            continue
-        graph['node_name'][i] = f"[{i}] {code2op[op]}"
-    print(op_cnts)
-    # Create a Digraph object
-    dot = Digraph(
-        comment='Graph Visualization', 
-        engine='dot', 
-        graph_attr={
-            'label': os.path.basename(graph_file),
-            'splines': 'line',
-            # 'nodesep': '0.8',
-            'overlap': 'scale',
-        },
-    )
-
-    # Add nodes and edges, setting the shape to "rectangle" and coloring node-2-a blue
-    for i, node_name in enumerate(graph["node_name"]):
-        if not node_name:
-            continue
-        if i in node_config_ids:
-            dot.node(node_name, shape="rectangle", color="blue")
-        else:
-            dot.node(node_name, shape="rectangle")
-
-    # print(graph["node_name"])
-    for edge in graph["edges"]:
-        from_node, to_node = edge
-        a = graph["node_name"][from_node]
-        b = graph["node_name"][to_node]
-        if a and b:
-            dot.edge(a, b)
-
-    # Render the graph to a file (e.g., in PNG format)
-    dot.render('graph', format='svg')
-
-
 def strip_table(ckpt):
     checkpoint = torch.load(ckpt)
     # print(checkpoint.keys())
@@ -261,6 +206,74 @@ def strip_table(ckpt):
     checkpoint['model_state'].pop('history.emb')
     output = ckpt.replace('.ckpt', '.strip.ckpt')
     torch.save(checkpoint, output)
+
+
+def dataset_sharding(root_dir, part_size=4000):
+    from copy import deepcopy
+    from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
+
+    dataset = TPUGraphsNpz(root_dir, source='nlp', search='default', task='layout')
+    idx_split = dataset.get_idx_split()
+    train_idx = deepcopy(idx_split['train'])
+    last_idx = max([max(idx) for idx in idx_split.values()])
+    
+    for pt_id in tqdm(train_idx):
+        pt_path = os.path.join(
+            dataset.processed_dir, 
+            f'{dataset.source}_{dataset.search}_data_{pt_id}.pt'
+        )
+        full_graph = torch.load(pt_path)
+        nc = int(full_graph.num_config)
+        parts_cnt = full_graph.partition_idx
+        domain = torch.arange(nc)
+        
+        config_feats = full_graph.config_feats.view(nc, full_graph.num_config_idx, -1)
+        # sort config and node config features by config's runtime
+        y_sort = torch.sort(full_graph.y)
+        config_feats = config_feats[y_sort.indices]
+        for k in dataset.EXTRA:
+            if hasattr(full_graph, k):
+                feat = getattr(full_graph, k)
+                setattr(full_graph, k, feat[y_sort.indices])
+        full_graph.y = y_sort.values
+        
+        shards = math.ceil(nc / part_size)
+        for i in range(shards):
+            sample_configs = domain[i::shards]
+            
+            graph = deepcopy(full_graph)
+            graph.y = full_graph.y[sample_configs]
+            graph.num_config = torch.tensor(len(sample_configs))
+            graph.config_feats = config_feats[sample_configs].view(-1, config_feats.size(-1))
+            graph.partition_idx = parts_cnt
+            
+            num_parts = full_graph.num_nodes // dataset.thres + 1
+            parts_cnt += num_parts * len(sample_configs)
+
+            for k in dataset.EXTRA:
+                if hasattr(graph, k):
+                    feat = getattr(graph, k)
+                    setattr(graph, k , feat[sample_configs])
+
+            if i == 0:
+                out_path = os.path.join(
+                    dataset.processed_dir, 
+                    f'{dataset.source}_{dataset.search}_data_{pt_id}.pt'
+                )
+            else:
+                last_idx += 1
+                out_path = os.path.join(
+                    dataset.processed_dir, 
+                    f'{dataset.source}_{dataset.search}_data_{last_idx}.pt'
+                )
+                idx_split['train'].append(last_idx)
+            torch.save(graph, out_path)
+        
+        pt_path = os.path.join(
+            dataset.processed_dir, 
+            dataset.processed_file_names[-1],
+        )
+        torch.save(idx_split, pt_path)
 
 
 def int8_config_feat(dir):
@@ -591,4 +604,5 @@ if __name__ == '__main__':
         ensemble_csv.__name__: ensemble_csv,
         ensemble_raw.__name__: ensemble_raw,
         inpsect_dataset.__name__: inpsect_dataset,
+        dataset_sharding.__name__: dataset_sharding,
     })
