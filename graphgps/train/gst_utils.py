@@ -1,11 +1,14 @@
 import copy
+from contextlib import nullcontext
 from typing import *
 
 import torch
 import numpy as np
+import torch_geometric.nn as tnn
 from torch import nn, Tensor
 from torch_sparse import SparseTensor
 from torch_geometric.data import Data, Batch
+from torch_geometric.graphgym.config import cfg
 
 from graphgps.history import History
 
@@ -36,16 +39,20 @@ def preprocess_batch(batch, model, num_sample_configs):
     return Batch.from_data_list(processed_batch_list), sample_idx
 
 
-def batch_sample_graph_segs(batch_list: List[Data], sampled_idx: torch.Tensor, emb_table: History, num_sample_config=32):
+def batch_sample_graph_segs(batch: Union[Batch, List[Data]], num_sample_config=32, train=True, all_segment=False):
+    # HACK: doing the reduant `to_data_list` here so every tensor in Data will be at least 1D
+    batch_list = batch.to_data_list() if isinstance(batch, Batch) else batch
     batch_train_list = []
-    batch_other = []
     batch_num_parts = []
     segments_to_train = []
     
     for i in range(len(batch_list)):
         partptr = batch_list[i].partptr.cpu().numpy()
         num_parts = len(partptr) - 1
-        batch_num_parts.extend([num_parts] * num_sample_config)
+        if train:
+            batch_num_parts.extend([num_parts] * num_sample_config)
+        else:
+            batch_num_parts.append(num_parts)  # HACK
         segment_to_train = np.random.randint(num_parts)
         segments_to_train.append(segment_to_train)
         
@@ -56,22 +63,25 @@ def batch_sample_graph_segs(batch_list: List[Data], sampled_idx: torch.Tensor, e
             N, E = batch_list[i].num_nodes, batch_list[i].num_edges
             data = copy.copy(batch_list[i])
             del data.num_nodes
-            adj, data.adj = data.adj, None
+            adj, data.adj = data.adj, None  # adj is a SparseTensor
 
             adj = adj.narrow(0, start, length).narrow(1, start, length)
             edge_idx = adj.storage.value()
 
             for key, item in data:
                 if isinstance(item, torch.Tensor) and item.size(0) == N:
+                    # get subset of node features
                     data[key] = item.narrow(0, start, length)
-                elif isinstance(item, torch.Tensor) and item.size(0) == E:
+                elif isinstance(item, torch.Tensor) and item.size(0) == E and item.ndim > 1:
+                    # get subset of edge features
                     data[key] = item[edge_idx]
                 else:
                     data[key] = item
 
             row, col, _ = adj.coo()
             data.edge_index = torch.stack([row, col], dim=0)
-            if j == segment_to_train:
+            if j == segment_to_train or all_segment:
+                # create same graph-segment for each layout config
                 for k in range(len(data.y)):
                     unfold_g = Data(
                         edge_index=data.edge_index,
@@ -80,17 +90,19 @@ def batch_sample_graph_segs(batch_list: List[Data], sampled_idx: torch.Tensor, e
                         config_feats=data.config_feats_full[:, k, :], 
                         num_nodes=length,
                     )
+
+                    for key in data.keys:
+                        if key not in unfold_g.keys:
+                            setattr(unfold_g, key, getattr(data, key))
+                    for feat_key in cfg.dataset.extra_cfg_feat_keys:
+                        sampled = getattr(data, feat_key)[:, k, :]
+                        setattr(unfold_g, feat_key, sampled)
                     batch_train_list.append(unfold_g)
-            else:
-                for k in range(len(data.y)):
-                    batch_other.append(
-                        emb_table.pull(
-                            batch_list[i].partition_idx.cpu() + num_parts * sampled_idx[i][k] + j
-                        )
-                    )
+
     return (
+        batch,
+        batch_list,
         batch_train_list,
-        batch_other,
         batch_num_parts,
         segments_to_train,
     )
@@ -214,6 +226,25 @@ class TPUModel(torch.nn.Module):
                 config_feats,
             ], dim=-1)
         return batch
+
+    def forward_segment(self, batch: Batch, freeze_body=False):
+        custom_gnn = self.model.model  # TPUModel.GraphGymModule.GNN
+        module_len = len(list(custom_gnn.children()))
+        predict_ctx = torch.no_grad() if freeze_body else nullcontext()
+
+        with predict_ctx:
+            for i, module in enumerate(custom_gnn.children()):
+                if i < module_len - 1:
+                    batch = module(batch)
+                if i == module_len - 1:
+                    batch_embed = tnn.global_max_pool(batch.x, batch.batch) \
+                                    + tnn.global_mean_pool(batch.x, batch.batch)
+        
+        graph_embed = batch_embed / torch.norm(batch_embed, dim=-1, keepdim=True)
+        for i, module in enumerate(custom_gnn.children()):
+            if i == module_len - 1:
+                graph_embed = module.layer_post_mp(graph_embed)
+        return graph_embed
 
 
 class CheckpointWrapper:

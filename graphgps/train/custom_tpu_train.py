@@ -34,7 +34,7 @@ from graphgps.train.gst_utils import (
 )
 
 
-def pairwise_hinge_loss_batch(pred, true):
+def pairwise_hinge_loss_batch(pred, true, margin=0.1):
     # pred: (batch_size, num_preds )
     # true: (batch_size, num_preds)
     batch_size = pred.shape[0]
@@ -42,7 +42,8 @@ def pairwise_hinge_loss_batch(pred, true):
     i_idx = torch.arange(num_preds).repeat(num_preds)
     j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
     pairwise_true = true[:,i_idx] > true[:,j_idx]
-    loss = torch.nn.functional.relu(0.1 - (pred[:,i_idx] - pred[:,j_idx])) * pairwise_true.float()
+    loss = nn.functional.relu(margin - (pred[:,i_idx] - pred[:,j_idx]))
+    loss *= pairwise_true.float()
     loss = torch.sum(loss) / batch_size
     return loss
 
@@ -76,16 +77,17 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
         if isinstance(batch, Batch):
             batch.to(torch.device(cfg.device))
             true = batch.y
-            batch_list = batch.to_data_list()
             (
+                batch_obj,
+                batch_list,
                 batch_train_list,
-                batch_other,
                 batch_num_parts,
                 segments_to_train,
             ) = batch_sample_graph_segs(
-                batch_list, sampled_idx, emb_table, 
+                batch, sampled_idx, emb_table, 
                 num_sample_config=num_sample_config
             )
+            batch_other = cached_node_embed(batch_list, sampled_idx, segments_to_train, emb_table)
         else:
             (   
                 batch_obj,
@@ -114,23 +116,8 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
         """
         Inference on sampled graph segments
         """
-        custom_gnn = model.model.model  # TPUModel.GraphGymModule.GNN
-        module_len = len(list(custom_gnn.children()))
-        predict_ctx = torch.no_grad() if cfg.gnn.freeze_body else nullcontext()
+        graph_embed = model.forward_segment(batch_train, freeze_body=cfg.gnn.freeze_body)
 
-        with predict_ctx:
-            for i, module in enumerate(custom_gnn.children()):
-                if i < module_len - 1:
-                    batch_train = module(batch_train)
-                if i == module_len - 1:
-                    batch_train_embed = tnn.global_max_pool(batch_train.x, batch_train.batch) \
-                                    + tnn.global_mean_pool(batch_train.x, batch_train.batch)
-        
-        graph_embed = batch_train_embed / torch.norm(batch_train_embed, dim=-1, keepdim=True)
-        for i, module in enumerate(custom_gnn.children()):
-            if i == module_len - 1:
-                graph_embed = module.layer_post_mp(graph_embed)
-        
         td1 = time.time() - t1
         t2 = time.time()
 
@@ -235,77 +222,16 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
         batch.split = split
         true = batch.y
         batch_list = batch.to_data_list()
-        batch_seg = []  # each `Data` in the list = one segment from one graph's one config`
-        batch_num_parts = []
-
-        for i in range(len(batch_list)):
-            partptr = batch_list[i].partptr.cpu().numpy()
-            num_parts = len(partptr) - 1
-            batch_num_parts.append(num_parts)
-            for j in range(num_parts):
-                start = int(partptr[j])
-                length = int(partptr[j + 1]) - start
-
-                N, E = batch_list[i].num_nodes, batch_list[i].num_edges
-                data = copy.copy(batch_list[i])
-                del data.num_nodes
-                adj, data.adj = data.adj, None
-
-                adj = adj.narrow(0, start, length).narrow(1, start, length)
-                edge_idx = adj.storage.value()
-
-                for key, item in data:
-                    if isinstance(item, torch.Tensor) and item.size(0) == N:
-                        data[key] = item.narrow(0, start, length)
-                    elif isinstance(item, torch.Tensor) and item.size(0) == E and item.ndim > 1:
-                        data[key] = item[edge_idx]
-                    else:
-                        data[key] = item
-
-                row, col, _ = adj.coo()
-                data.edge_index = torch.stack([row, col], dim=0)
-                
-                if split == 'test' and False:
-                    node_config_bar = tqdm(range(len(data.y)))
-                    node_config_bar.set_description_str(f'Config Batch-{i}, Seg-{j}')
-                else:
-                    node_config_bar = range(len(data.y))
-
-                for k in node_config_bar:
-                    unfold_g = Data(
-                        edge_index=data.edge_index,
-                        op_feats=data.op_feats,
-                        op_code=data.op_code,
-                        config_feats=data.config_feats_full[:, k, :], 
-                        num_nodes=length
-                    )
-                    for key in data.keys:
-                        if key not in unfold_g.keys:
-                            setattr(unfold_g, key, getattr(data, key))
-                    for feat_key in cfg.dataset.extra_cfg_feat_keys:
-                        sampled = getattr(data, feat_key)[:, k, :]
-                        setattr(unfold_g, feat_key, sampled)
-                    batch_seg.append(unfold_g)
+        sampling = batch_sample_graph_segs(batch, all_segment=True, train=False)
+        batch_seg = sampling[2]
+        batch_num_parts = sampling[3]
 
         def partial_inference(batch_seg: List[Data]) -> torch.Tensor:
             nonlocal model
             batch_seg = Batch.from_data_list(batch_seg)  # (batch_size * sum(num_segments[i], * num_config,)
             batch_seg.to(torch.device(cfg.device))
             batch_seg = model.gather_input_feat(batch_seg)
-        
-            custom_gnn = model.model.model
-            module_len = len(list(custom_gnn.children()))
-            for i, module in enumerate(custom_gnn.children()):
-                if i < module_len - 1:
-                    batch_seg = module(batch_seg)
-                if i == module_len - 1:
-                    batch_seg_embed = tnn.global_max_pool(batch_seg.x, batch_seg.batch) + \
-                        tnn.global_mean_pool(batch_seg.x, batch_seg.batch)
-            graph_embed = batch_seg_embed / torch.norm(batch_seg_embed, dim=-1, keepdim=True)
-            for i, module in enumerate(custom_gnn.children()):
-                if i == module_len - 1:
-                    res = module.layer_post_mp(graph_embed)
-            return res
+            return model.forward_segment(batch_seg)
         
         res = []
         batch_graphs = cfg.train.batch_size * cfg.dataset.num_sample_config
