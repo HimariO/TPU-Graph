@@ -42,11 +42,11 @@ def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False):
     i_idx = torch.arange(num_preds).repeat(num_preds)
     j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
 
-    step = (true.max() - true.min()).float() / 10
     pairwise_true = true[:,i_idx] > true[:,j_idx]
-    pairwise_scale = nn.functional.relu(true[:,i_idx] - true[:,j_idx]) * pairwise_true / step
-
     if adaptive:
+        fp_true = true.float()
+        step = (fp_true.var(dim=1, keepdim=True)**0.5) * 2 / 10
+        pairwise_scale = nn.functional.relu(true[:,i_idx] - true[:,j_idx]) * pairwise_true / step
         margin = (pairwise_scale + 1) * base_margin
     else:
         margin = base_margin
