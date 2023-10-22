@@ -34,29 +34,27 @@ from graphgps.train.gst_utils import (
 )
 
 
-def pairwise_hinge_loss_batch(pred, true, margin=0.1):
+def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False):
     # pred: (batch_size, num_preds )
     # true: (batch_size, num_preds)
     batch_size = pred.shape[0]
     num_preds = pred.shape[1]
     i_idx = torch.arange(num_preds).repeat(num_preds)
     j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
+
+    step = (true.max() - true.min()).float() / 10
     pairwise_true = true[:,i_idx] > true[:,j_idx]
+    pairwise_scale = nn.functional.relu(true[:,i_idx] - true[:,j_idx]) * pairwise_true / step
+
+    if adaptive:
+        margin = (pairwise_scale + 1) * base_margin
+    else:
+        margin = base_margin
+
     loss = nn.functional.relu(margin - (pred[:,i_idx] - pred[:,j_idx]))
-    loss *= pairwise_true.float()
+    loss = loss * pairwise_true.float()
     loss = torch.sum(loss) / batch_size
     return loss
-
-
-def pairwise_hinge_loss(pred, true):
-    num_preds = pred.shape[0]
-    i_idx = torch.arange(num_preds).repeat(num_preds)
-    j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
-    pairwise_true = true[i_idx] > true[j_idx]
-    loss = torch.sum(torch.nn.functional.relu(0.1 - (pred[i_idx] - pred[j_idx])) * pairwise_true.float())
-    opa_indices = pairwise_true.nonzero().flatten()
-    opa_preds = pred[i_idx[opa_indices]] - pred[j_idx[opa_indices]]
-    return loss, pairwise_true[opa_indices], opa_preds
 
 
 @ulogger.catch(reraise=True)
@@ -154,7 +152,7 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
         if 'TPUGraphs' in cfg.dataset.name:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
-            loss = pairwise_hinge_loss_batch(pred, true)
+            loss = pairwise_hinge_loss_batch(pred, true, adaptive=cfg.train.adap_margin)
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred.detach().to('cpu', non_blocking=True)
         else:

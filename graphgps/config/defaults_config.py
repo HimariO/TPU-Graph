@@ -37,6 +37,10 @@ def extended_cfg(cfg):
     # always checkpoint the current best model based on validation performance,
     # instead, when False, follow cfg.train.eval_period checkpointing frequency.
     cfg.train.ckpt_best = True
+    cfg.train.adap_margin = False
+    cfg.train.gst = CN()
+    cfg.train.gst.graph_embed_dims = 1
+    cfg.train.gst.graph_embed_size = 1
 
     cfg.dataset.source = 'nlp'
     cfg.dataset.search = 'random'

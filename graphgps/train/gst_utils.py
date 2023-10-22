@@ -145,6 +145,8 @@ class TPUModel(torch.nn.Module):
             enc_tile_config=False,
             extra_cfg_feat_keys=None,
             extra_cfg_feat_dims=0,
+            graph_embed_dims=1,
+            graph_embed_size=1,
         ):
         super().__init__()
         self.model = model
@@ -152,7 +154,12 @@ class TPUModel(torch.nn.Module):
         self.linear_map = nn.Linear(286, 128, bias=True)
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
         self.config_weights = nn.Parameter(torch.ones(1, 18, requires_grad=True) * 100)
-        self.history = History(500_000_000, 1)
+        
+        if graph_embed_dims == 1:
+            self.history = History(500_000_000, 1)
+        else:
+            self.history = History(14_000_000, graph_embed_size)
+        
         if enc_config:
             self.config_map = nn.Sequential(
                 nn.Linear(180, 32, bias=True),

@@ -119,6 +119,7 @@ class DatasetStatistics:
     op_feat_std: torch.Tensor
     num_nodes: int
     num_graphs: int
+    num_graph_configs: int
     num_segments: int
     num_unique_segments: int
     max_node_per_graph: int
@@ -255,7 +256,7 @@ class TPUGraphsNpz(Dataset):
         self._cache_limit = 80
         self._norm_op_feat = False
         super().__init__(root, transform, pre_transform, pre_filter)
-        # self.meta
+        self.meta
         self.data = Data(
             edge_index=None,
             op_feats=None,
@@ -282,14 +283,19 @@ class TPUGraphsNpz(Dataset):
             total_unq_segs = 0
             total_segs = 0
             total_graphs = 0
+            total_cfgs = 0
             max_nodes = 0
             
-            for path in tqdm(self.processed_paths):
+            idx_split = self.get_idx_split()
+            for ind in tqdm(idx_split['train']):
+                path = self.processed_paths[ind]
                 data = torch.load(path)
                 if isinstance(data, Data):
                     op_feats.append(data.op_feats)
                     num_node = data.op_feats.size(0)
-                    num_cfgs = data.num_config
+                    num_cfgs = len(data.y)
+                    # num_cfgs = data.num_config
+                    total_cfgs += num_cfgs
                     total_nodes += num_node
                     total_unq_segs += num_node // self.thres + 1
                     total_segs += (num_node // self.thres + 1) * num_cfgs
@@ -305,6 +311,7 @@ class TPUGraphsNpz(Dataset):
                 op_feat_mean=op_feats_mean,
                 op_feat_std=op_feats_std,
                 num_graphs=total_graphs,
+                num_graph_configs=total_cfgs,
                 num_nodes=total_nodes,
                 num_segments=total_segs,
                 num_unique_segments=total_unq_segs,
