@@ -1,10 +1,11 @@
 import os
 import glob
+import math
 import warnings
 import multiprocessing as mp
 from functools import lru_cache
 from termcolor import colored
-from itertools import product
+from itertools import product, zip_longest
 from collections import defaultdict
 from typing import *
 
@@ -17,6 +18,19 @@ from loguru import logger
 import hlo_proto_py.tuning_pb2 as tuning_pb
 import hlo_proto_py.hlo_pb2 as hlo_pb
 
+
+def eval_opa(y_true, y_pred):
+    num_preds = y_pred.shape[0]
+    i_idx = torch.arange(num_preds).repeat(num_preds)
+    j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
+    pairwise_true = y_true[i_idx] > y_true[j_idx]
+    opa_indices = pairwise_true.nonzero()[0].flatten()
+    opa_preds = y_pred[i_idx[opa_indices]] - y_pred[j_idx[opa_indices]]
+    if len(opa_indices) > 0:
+        opa_acc = float((opa_preds > 0).sum()) / opa_preds.shape[0]
+    else:
+        opa_acc = 0.0
+    return opa_acc
 
 
 class ReadEstimatorV1:
@@ -293,8 +307,9 @@ class ReadEstimatorV1:
 
         return reads * int(mul)
 
-    @staticmethod
+    @classmethod
     def esitmate(
+            cls,
             inst: hlo_pb.HloInstructionProto,
             id2inst: Dict[int, hlo_pb.HloInstructionProto], 
             layout_config: Dict[int, np.ndarray]) -> List[int]:
@@ -325,7 +340,7 @@ class ReadEstimatorV1:
         in1_layout = cfg2layout(config[6:12], len(input_shape_1))
         
         if inst.opcode == "reshape":
-            features['in1_reads'] = ReadEstimatorV1.reshape_read_ops(
+            features['in1_reads'] = cls.reshape_read_ops(
                 input_shape_1,
                 in1_layout,
                 output_shape,
@@ -343,7 +358,7 @@ class ReadEstimatorV1:
                 kernel_spatial_dims = tuple(inst.convolution_dimension_numbers.kernel_spatial_dimensions)
                 
                 if len(input_shape_1) == 4:
-                    features['in1_reads'] = ReadEstimatorV1.conv_2d_read_ops(
+                    features['in1_reads'] = cls.conv_2d_read_ops(
                         input_shape_1, 
                         in1_layout, 
                         spatial_dims=spatial_dims, 
@@ -351,7 +366,7 @@ class ReadEstimatorV1:
                         fast=True
                     )
                 elif len(input_shape_1) == 5:
-                    features['in1_reads'] = ReadEstimatorV1.conv_3d_read_ops(
+                    features['in1_reads'] = cls.conv_3d_read_ops(
                         input_shape_1, 
                         in1_layout, 
                         spatial_dims=spatial_dims, 
@@ -363,7 +378,7 @@ class ReadEstimatorV1:
                     raise ValueError(f"Encoutner unsupported {len(input_shape_1) - 2} dimension conv operation")
                 
                 if len(input_shape_2) == 4:
-                    features['in2_reads'] = ReadEstimatorV1.conv_2d_read_ops(
+                    features['in2_reads'] = cls.conv_2d_read_ops(
                         input_shape_2, 
                         in2_layout, 
                         spatial_dims=kernel_spatial_dims, 
@@ -371,7 +386,7 @@ class ReadEstimatorV1:
                         fast=True
                     )
                 elif len(input_shape_2) == 5:
-                    features['in2_reads'] = ReadEstimatorV1.conv_3d_read_ops(
+                    features['in2_reads'] = cls.conv_3d_read_ops(
                         input_shape_2, 
                         in2_layout, 
                         spatial_dims=kernel_spatial_dims, 
@@ -382,9 +397,9 @@ class ReadEstimatorV1:
                     raise ValueError(f"Encoutner unsupported {len(input_shape_2) - 2} dimension conv operation")
             elif inst.opcode == 'dot':
                 reduce_dims = tuple(inst.dot_dimension_numbers.lhs_contracting_dimensions)
-                features['in1_reads'] = ReadEstimatorV1.dot_read_ops(input_shape_1, in1_layout, reduce_dims=reduce_dims, fast=True)
+                features['in1_reads'] = cls.dot_read_ops(input_shape_1, in1_layout, reduce_dims=reduce_dims, fast=True)
                 reduce_dims = tuple(inst.dot_dimension_numbers.rhs_contracting_dimensions)
-                features['in2_reads'] = ReadEstimatorV1.dot_read_ops(input_shape_2, in2_layout, reduce_dims=reduce_dims, fast=True)
+                features['in2_reads'] = cls.dot_read_ops(input_shape_2, in2_layout, reduce_dims=reduce_dims, fast=True)
             
         return [
             max(1, features['in1_reads'] // 100) if features['in1_reads'] > 0 else 0,
@@ -392,7 +407,7 @@ class ReadEstimatorV1:
         ]
 
 
-class ReadEstimatorV2:
+class ReadEstimatorV2(ReadEstimatorV1):
     """
     TPU MMA(Mtx mupltiply and accumalate) cycle: https://youtu.be/ot4RWfGTtOg?t=693
     """
@@ -402,13 +417,17 @@ class ReadEstimatorV2:
     def conv_2d_read_ops(
             input_shape: Tuple[int], 
             input_layout: Tuple[int], 
-            pagesize: int=128*8, 
+            tilesize: int=(128, 8), # minor to major / VMEM shape
             spatial_dims: Tuple[int]=(1, 2), 
             kernel_size: Tuple[int]=(3, 3),
             fast=False,
         ) -> int:
         ndim = len(input_shape)
         is_kernel = all([input_shape[si] == k for si, k in zip(spatial_dims, kernel_size)])
+        pagesize = min(input_shape[input_layout[0]], tilesize[0])
+        if ndim > 1:
+            pagesize *= min(input_shape[input_layout[1]], tilesize[1])
+        
         bc_dims = [i for i in range(ndim) if i not in spatial_dims]
         step_sizes = {}
         prev_dim = -1
@@ -453,3 +472,79 @@ class ReadEstimatorV2:
                                         last_access = mem_loc - (int(mem_loc) % pagesize)
 
         return reads * int(mul)
+    
+
+class ReadEstimatorV3(ReadEstimatorV1):
+
+    @lru_cache(None)
+    @staticmethod
+    def reshape_read_ops(
+            input_shape: Tuple[int],
+            input_layout: Tuple[int],
+            output_shape: Tuple[int],
+            dim_permut: Tuple[int]=[0],
+            vmem: int=(128, 8),
+            fast=False) -> int:
+        if dim_permut[:2] == input_layout[:2]:
+            return 1
+        
+        src_chunks = 1
+        _input_shape = [input_shape[i] for i in input_layout]
+        for ten, mem in zip_longest(_input_shape, vmem, fillvalue=1):
+            src_chunks *= math.ceil(ten / mem)
+        
+        dst_chunks = 1
+        _output_shape = [output_shape[i] for i in dim_permut]
+        for ten, mem in zip_longest(_output_shape, vmem, fillvalue=1):
+            dst_chunks *= math.ceil(ten / mem)
+        
+        return src_chunks + dst_chunks
+    
+    @staticmethod
+    def tensor_read_ops(input_shape: Tuple[int], input_layout: Tuple[int], vmem: int=(128, 8)):
+        new_shape = []  # dim-n ~ dim-0, minor to major, reverse from normal shape format
+        for dim in input_layout:
+            new_shape.append(input_shape[dim])
+        chunks = 1
+        for ten, mem in zip_longest(new_shape, vmem, fillvalue=1):
+            chunks *= math.ceil(ten / mem)
+        return chunks
+        
+    @lru_cache(None)
+    @staticmethod
+    def conv_2d_read_ops(
+            input_shape: Tuple[int], 
+            input_layout: Tuple[int], 
+            vmem: int=(128, 8), 
+            spatial_dims: Tuple[int]=(1, 2), 
+            kernel_size: Tuple[int]=(3, 3),
+            fast=False,
+        ) -> int:
+        return ReadEstimatorV3.tensor_read_ops(input_shape, input_layout)
+
+    @lru_cache(None)
+    @staticmethod
+    def conv_3d_read_ops(
+            input_shape: Tuple[int], 
+            input_layout: Tuple[int], 
+            vmem: int=(128, 8), 
+            spatial_dims: Tuple[int]=(1, 2), 
+            kernel_size: Tuple[int]=(3, 3),
+            fast=False,
+        ) -> int:
+        return ReadEstimatorV3.conv_2d_read_ops(input_shape, input_layout)
+    
+    @lru_cache(None)
+    @staticmethod
+    def dot_read_ops(input_shape: Tuple[int], input_layout: Tuple[int], pagesize: int=128*8, reduce_dims=[0], fast=False):
+        vector_size = 1
+        remains = []
+        for dim in input_layout:
+            if dim in reduce_dims:
+                vector_size *= input_shape[dim]
+            else:
+                remains.append(input_shape[dim])
+        new_shape = tuple(remains + [vector_size])
+        default_layout = tuple(range(len(new_shape)))[::-1]
+        prepare_ops = ReadEstimatorV3.reshape_read_ops(input_shape, input_layout, new_shape, dim_permut=default_layout)
+        return prepare_ops + ReadEstimatorV3.tensor_read_ops(new_shape, default_layout)

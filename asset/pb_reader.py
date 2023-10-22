@@ -16,7 +16,11 @@ from numba import jit, prange, NumbaPendingDeprecationWarning
 from loguru import logger
 import hlo_proto_py.tuning_pb2 as tuning_pb
 import hlo_proto_py.hlo_pb2 as hlo_pb
-from estimator import ReadEstimatorV1
+from estimator import (
+    ReadEstimatorV1, 
+    ReadEstimatorV3, 
+    eval_opa
+)
 
 """
 ref on how different arugment of hlo insturction work:
@@ -139,10 +143,10 @@ def estimate_shape(
 
 def single_file_eda():
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/train/inference_mlperf_ssd_1200_batch_1.pb"
-    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/resnet_v1_50_official_batch_128_bf16.pb"
+    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/resnet_v1_50_official_batch_128_bf16.pb"
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/bert_multi_cased_L-12_H-768_A-12_batch_size_16_train.pb"
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/albert_en_xlarge_batch_size_16_test.pb"
-    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/unet_3d.4x4.bf16.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/unet_3d.4x4.bf16.pb"
 
     with open(pb_path, mode='rb') as f:
         hlo_obj = tuning_pb.ModuleTuningData()
@@ -165,8 +169,8 @@ def single_file_eda():
 
         tunable = [
             # 'dot',
-            'reshape',
-            # 'convolution'
+            # 'reshape',
+            'convolution'
         ]
         for i in range(m):
             comp: hlo_pb.HloComputationProto = computes[i]
@@ -230,6 +234,8 @@ def process_graph(data_src, skip=-1):
         all_graph_opreads = []
         config_feats = pt_data['config_feats'].view(
             pt_data['num_config'], -1, pt_data['config_feats'].size(-1))
+
+        # if not (pt_data.y > 1e-6).any(): continue
         
         for ci, graph_config in enumerate(config_feats):
             node2cfg = {
@@ -247,7 +253,7 @@ def process_graph(data_src, skip=-1):
                     cache_featrue[sig] = shape_feat
                 per_graph_config.append(shape_feat)
                 
-                reads_feat = ReadEstimatorV1.esitmate(inst_list[node], id2inst, node2cfg)
+                reads_feat = ReadEstimatorV3.esitmate(inst_list[node], id2inst, node2cfg)
                 per_graph_reads.append(reads_feat)
                 if len(data_src) > 1:
                     logger.info(
@@ -268,13 +274,21 @@ def process_graph(data_src, skip=-1):
         
         all_graph_cfgs = torch.tensor(all_graph_cfgs)
         all_graph_opreads = torch.tensor(all_graph_opreads)
+        if (pt_data.y > 1e-6).any() and False:
+            opreads = all_graph_opreads.sum(dim=-1)
+            # min_val = opreads.min(dim=0, keepdim=True).values
+            # max_val = opreads.max(dim=0, keepdim=True).values
+            # opreads = (opreads - min_val) / torch.clip(max_val - min_val, min=1) # norm per node
+            opreads = opreads.sum(dim=-1)
+            feat_opa = eval_opa(pt_data.y, opreads)
+            logger.info(f"{graph_name}: read ops <--> runtime OPA = {feat_opa}, {opreads.shape}")
         pt_data['extra_feat'] = auto_dtype(all_graph_cfgs)
         pt_data['extra_read_ops_feat'] = all_graph_opreads.float()
         torch.save(pt_data, file_dict['pt'])
 
 
 @logger.catch(reraise=True)
-def create_dataset_feature(pt_glob, pb_dir):
+def create_dataset_feature(pt_glob, pb_dir, debug=False):
     logger.info(f'Scanning files in source folder: {pt_glob}')
     data_src = defaultdict(dict)
     pt_files = glob.glob(pt_glob, recursive=True)
@@ -287,30 +301,34 @@ def create_dataset_feature(pt_glob, pb_dir):
         data_src[graph_name]['pb'] = path
     
     logger.info(f'Start processing...')
-    # process_graph(data_src)
-    with mp.Pool(processes=24) as pool:
-        breakdown = [{k: v} for k, v in data_src.items()]
-        done = 0
-        for _ in pool.imap_unordered(process_graph, breakdown):
-            done += 1
+    if debug:
+        process_graph(data_src)
+    else:
+        workers = max(1, mp.cpu_count() // 2)
+        logger.info(f"Launching {workers} worker processes")
+        with mp.Pool(processes=workers) as pool:
+            breakdown = [{k: v} for k, v in data_src.items()]
+            done = 0
+            for _ in pool.imap_unordered(process_graph, breakdown):
+                done += 1
             logger.info(f"{done}/{len(breakdown)}")
             
 
 def fast_mode_sanity_check():
-    # ratios = []
-    # for batch in [1, 2, 4, 8]:
-    #     for channel in [1, 4, 8, 16, 32]:
-    #         layout_1 = ReadEstimatorV1.conv_3d_read_ops([1,24,24,24,channel], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2])
-    #         layout_2 = ReadEstimatorV1.conv_3d_read_ops([1,24,24,24,channel], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2])
-    #         print(f"b = {batch}, c = {channel}, {layout_1} / {layout_2} = {layout_1 / layout_2}")
-    #         ratios.append(layout_1 / layout_2)
-    # print(ratios)
+    ratios = []
+    for batch in [1, 2, 4, 8]:
+        for channel in [1, 4, 8, 16, 32]:
+            layout_1 = ReadEstimatorV3.conv_3d_read_ops((1,24,24,24,channel), (4,3,2,1,0), spatial_dims=(1,2,3), kernel_size=(2,2,2))
+            layout_2 = ReadEstimatorV3.conv_3d_read_ops((1,24,24,24,channel), (3,2,1,4,0), spatial_dims=(1,2,3), kernel_size=(2,2,2))
+            print(f"b = {batch}, c = {channel}, {layout_1} / {layout_2} = {layout_1 / layout_2}")
+            ratios.append(layout_1 / layout_2)
+    print(ratios)
 
     ratios = []
     fast_mode = False
     for b1, b2 in product([1, 2, 4, 8], [1, 2, 4, 8]):
-        layout_1 = ReadEstimatorV1.dot_read_ops((b1, b2, 32, 64), (0, 1, 2, 3), reduce_dims=(2,3), fast=fast_mode)
-        layout_2 = ReadEstimatorV1.dot_read_ops((b1, b2, 32, 64), (2, 3, 0, 1), reduce_dims=(2,3), fast=fast_mode)
+        layout_1 = ReadEstimatorV3.dot_read_ops((b1, b2, 32, 64), (0, 1, 2, 3), reduce_dims=(2,3), fast=fast_mode)
+        layout_2 = ReadEstimatorV3.dot_read_ops((b1, b2, 32, 64), (2, 3, 0, 1), reduce_dims=(2,3), fast=fast_mode)
         print(f"b = {[b1, b2]}, {layout_1} / {layout_2} = {layout_1 / layout_2}")
         ratios.append(layout_1 / layout_2)
 
@@ -323,14 +341,14 @@ if __name__ == '__main__':
     #     "/home/ron_zhu/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
     #     "/home/ron_zhu/data/tpugraphs/pb/pb/layout/xla/default/"
     # )
-    # create_dataset_feature(
-    #     "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
-    #     "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/"
-    # )
     create_dataset_feature(
-        "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/nlp_default*data*.pt",
-        "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/"
+        "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
+        "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/"
     )
+    # create_dataset_feature(
+    #     "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/nlp_default*data*.pt",
+    #     "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/"
+    # )
 
     # print(ReadEstimatorV1.conv_read_ops([2,24,24,24,64], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
     # print(ReadEstimatorV1.conv_read_ops([2,24,24,24,64], [3,2,1,4,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))
@@ -349,5 +367,5 @@ if __name__ == '__main__':
     # print(ReadEstimatorV1.dot_read_ops([23, 64, 2048], [0, 1, 2], reduce_dims=[1,0]))
     # fast_mode_sanity_check()
 
-    # print(ReadEstimatorV1.reshape_read_ops((4,2,3), (2,1,0), (8,3), (0, 1)))
-    # print(ReadEstimatorV1.reshape_read_ops((40,20,30), (2,1,0), (2,20,600),(0,2,1)))
+    # print(ReadEstimatorV3.reshape_read_ops((4,2,3), (2,1,0), (8,3), (0, 1)))
+    # print(ReadEstimatorV3.reshape_read_ops((40,20,30), (2,1,0), (2,20,600),(0,2,1)))
