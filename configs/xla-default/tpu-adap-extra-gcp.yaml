@@ -23,7 +23,7 @@ dataset:
     use: true
     hops: 2
     bidirect: true
-  config_sampler: IntervalSampler
+  # config_sampler: IntervalSampler
   extra_cfg_feat_keys: ["extra_feat"]
   extra_cfg_feat_dims: 280
 

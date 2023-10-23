@@ -57,9 +57,9 @@ gnn:
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 500
+  max_epoch: 300
   batch_accumulation: 1
 share:
   dim_in: 286
 device: cuda
-# model_ckpt: tests/nlp-default-sage-fullenc-khop-extra-v2/tpu-khop-extra-v2-gcp/0/best-63.ckpt
+model_ckpt: tests/nlp-default-sage-fullenc-khop-extra-v2/tpu-khop-extra-v2-gcp/0/76.ckpt
