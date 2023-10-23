@@ -276,6 +276,32 @@ def dataset_sharding(root_dir, part_size=4000):
         torch.save(idx_split, pt_path)
 
 
+def insert_graph_id(root_dir, source, search):
+    from torch_geometric.data import Batch, Data
+    from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
+
+    dataset = TPUGraphsNpz(root_dir, source=source, search=search, task='layout')
+    name2partid = {}
+    for file in tqdm(dataset.processed_file_names):
+        file = os.path.join(dataset.processed_dir, file)
+        data = torch.load(file)
+        if isinstance(data, Data):
+            name2partid[file] = data.partition_idx
+
+    config_counts = 0
+    graph_counts = 0
+    by_part_id = sorted(name2partid.items(), key=lambda kv: kv[1])
+    for file, part_id in tqdm(by_part_id):
+        print(file, part_id)
+        data = torch.load(file)
+        if isinstance(data, Data):
+            data.graph_idx = graph_counts
+            data.graph_config_idx = config_counts
+            graph_counts += 1
+            config_counts += int(data.num_config)
+            torch.save(data, file)
+
+
 def int8_config_feat(dir):
     files = glob.glob(os.path.join(dir, 'xla_tile*.pt'))
     int16 = 0
@@ -469,8 +495,10 @@ def ensemble_raw(pt_files: List[str], out_path: str):
         
 
 def inpsect_dataset(root_dir, field='runtime'):
+    from torch_geometric.graphgym.config import cfg
     from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
-    dataset = TPUGraphsNpz(root_dir, source='nlp', search='default', task='layout')
+    cfg.dataset.extra_cfg_feat_keys = []
+    dataset = TPUGraphsNpz(root_dir, source='xla', search='random', task='layout')
     dataset._norm_op_feat = False
     config_feats = []
     code2name = {v: k for k, v in OPCODE.items()}
@@ -605,4 +633,5 @@ if __name__ == '__main__':
         ensemble_raw.__name__: ensemble_raw,
         inpsect_dataset.__name__: inpsect_dataset,
         dataset_sharding.__name__: dataset_sharding,
+        insert_graph_id.__name__: insert_graph_id,
     })

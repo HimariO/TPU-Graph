@@ -120,13 +120,21 @@ def cached_node_embed(
         partptr = data.partptr.cpu().numpy()
         num_parts = len(partptr) - 1
         
-        for j in range(num_parts):
-            if j == segments_to_train[i]:
-                continue
+        if emb_table.embedding_dim == 1:
+            for j in range(num_parts):
+                if j == segments_to_train[i]:
+                    continue
+                for k in range(len(data.y)):
+                    batch_other.append(
+                        emb_table.pull(
+                            data.partition_idx.cpu() + num_parts * sampled_idx[i][k] + j
+                        )
+                    )
+        else:
             for k in range(len(data.y)):
                 batch_other.append(
                     emb_table.pull(
-                        data.partition_idx.cpu() + num_parts * sampled_idx[i][k] + j
+                        data.graph_config_idx.cpu() + sampled_idx[i][k]
                     )
                 )
     return batch_other
@@ -155,6 +163,7 @@ class TPUModel(torch.nn.Module):
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
         self.config_weights = nn.Parameter(torch.ones(1, 18, requires_grad=True) * 100)
         
+        self.graph_embed_dims = graph_embed_dims
         if graph_embed_dims == 1:
             self.history = History(500_000_000, 1)
         else:
@@ -248,10 +257,101 @@ class TPUModel(torch.nn.Module):
                                     + tnn.global_mean_pool(batch.x, batch.batch)
         
         graph_embed = batch_embed / torch.norm(batch_embed, dim=-1, keepdim=True)
-        for i, module in enumerate(custom_gnn.children()):
-            if i == module_len - 1:
-                graph_embed = module.layer_post_mp(graph_embed)
+        
+        if self.graph_embed_dims == 1:
+            for i, module in enumerate(custom_gnn.children()):
+                if i == module_len - 1:
+                    graph_embed = module.layer_post_mp(graph_embed)
+        
         return graph_embed
+    
+    def join_segments(self, cur_segment: Tensor, batch_other: List[Tensor], batch_num_parts: List[int]) -> Tensor:
+        if self.graph_embed_dims == 1:
+            return self._join_1d_segments(cur_segment, batch_other, batch_num_parts)
+        elif self.graph_embed_dims == 2:
+            return self._join_2d_segments(cur_segment, batch_other, batch_num_parts)
+        else:
+            raise ValueError(f'We only support graph_embed_dims <= 2 for now, but got: {self.graph_embed_dims}')
+    
+    def _join_1d_segments(self, cur_segment: Tensor, batch_other: List[Tensor], batch_num_parts: List[int]) -> Tensor:
+        if batch_other:
+            binomial = torch.distributions.binomial.Binomial(probs=0.5)
+            """
+            Sample some cached embedding of graph segements, 
+            use mean of cached + inferenced embedding as full-graph embedding.
+            """
+            batch_other = torch.cat(batch_other, dim=0)
+            mask =  binomial.sample((batch_other.shape[0], 1)).to(torch.device(cfg.device))
+            batch_other = batch_other.to(torch.device(cfg.device))
+            batch_other = batch_other * mask
+            
+            batch_other_embed = torch.zeros_like(cur_segment)
+            zero_segs = torch.zeros(
+                [cur_segment.size(0), 1], 
+                dtype=cur_segment.dtype, 
+                device=cur_segment.device
+            )
+            part_cnt = 0
+            for i, num_parts in enumerate(batch_num_parts):
+                m = num_parts - 1
+                batch_other_embed[i, :] += torch.sum(
+                    batch_other[part_cnt: part_cnt + m, :],
+                    dim=0, 
+                    keepdim=False
+                )
+                zero_segs[i] += (torch.abs(batch_other[part_cnt: part_cnt + m, :]) < 1e-6).sum()
+                part_cnt += m
+            
+            batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
+            batch_num_parts = batch_num_parts.view(-1, 1)
+            # multiplier_num = (batch_num_parts - 1)/ 2 + 1
+            multiplier_num = batch_num_parts / (batch_num_parts - zero_segs)
+            pred = cur_segment * multiplier_num + batch_other_embed
+        else:
+            pred = cur_segment
+        return pred
+    
+    def _join_2d_segments(self, cur_segment: Tensor, batch_other: List[Tensor], batch_num_parts: List[int]) -> Tensor:
+        if isinstance(batch_other, list):
+            batch_other = torch.cat(batch_other, dim=0)
+        batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
+        batch_num_parts = batch_num_parts.view(-1, 1)
+        # TODO: maybe adding drop out on "embedding" of batch_other here.
+        alpha = 1 / batch_num_parts
+        beta = (batch_num_parts - 1) / batch_num_parts
+        pred = alpha * cur_segment + beta * batch_other
+
+        if self.graph_embed_dims == 2:
+            custom_gnn = self.model.model  # TPUModel.GraphGymModule.GNN
+            module_len = len(list(custom_gnn.children()))
+            for i, module in enumerate(custom_gnn.children()):
+                if i == module_len - 1:
+                    pred = module.layer_post_mp(pred)
+        return pred
+    
+    def update_emb_table(
+            self,
+            emb: Tensor,
+            graph: Data,
+            config_id: int,
+            segments_idx: int,
+        ):
+        emb = emb.cpu()
+        num_segment = len(graph.partptr) - 1
+
+        if self.graph_embed_dims == 1:
+            flat_ind = (
+                graph.partition_idx.cpu() + 
+                config_id * num_segment + 
+                segments_idx
+            )
+            self.history.push(emb, flat_ind)
+        else:
+            global_config_id = graph.graph_config_idx
+            flat_ind = global_config_id + config_id
+            # ema = self.history.pull(flat_ind)
+            # ema = ema * ((num_segment - 1) / num_segment) + emb * (1 / num_segment)
+            self.history.push(emb, flat_ind)
 
 
 class CheckpointWrapper:

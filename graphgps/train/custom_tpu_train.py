@@ -34,6 +34,42 @@ from graphgps.train.gst_utils import (
 )
 
 
+def listMLE(y_pred, y_true, eps=1e-7, padded_value_indicator=-1):
+    """
+    ListMLE loss introduced in "Listwise Approach to Learning to Rank - Theory and Algorithm".
+    :param y_pred: predictions from the model, shape [batch_size, slate_length]
+    :param y_true: ground truth labels, shape [batch_size, slate_length]
+    :param eps: epsilon value, used for numerical stability
+    :param padded_value_indicator: an indicator of the y_true index containing a padded item, e.g. -1
+    :return: loss value, a torch.Tensor
+    
+    ref: https://github.com/allegro/allRank/blob/master/allrank/models/losses/listMLE.py
+    """
+    # shuffle for randomised tie resolution
+    random_indices = torch.randperm(y_pred.shape[-1])
+    y_pred_shuffled = y_pred[:, random_indices]
+    y_true_shuffled = y_true[:, random_indices]
+
+    y_true_sorted, indices = y_true_shuffled.sort(descending=True, dim=-1)
+
+    mask = y_true_sorted == padded_value_indicator
+
+    preds_sorted_by_true = torch.gather(y_pred_shuffled, dim=1, index=indices)
+    preds_sorted_by_true[mask] = float("-inf")
+
+    max_pred_values, _ = preds_sorted_by_true.max(dim=1, keepdim=True)
+
+    preds_sorted_by_true_minus_max = preds_sorted_by_true - max_pred_values
+
+    cumsums = torch.cumsum(preds_sorted_by_true_minus_max.exp().flip(dims=[1]), dim=1).flip(dims=[1])
+
+    observation_loss = torch.log(cumsums + eps) - preds_sorted_by_true_minus_max
+
+    observation_loss[mask] = 0.0
+
+    return torch.mean(torch.sum(observation_loss, dim=1))
+
+
 def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False):
     # pred: (batch_size, num_preds )
     # true: (batch_size, num_preds)
@@ -45,8 +81,9 @@ def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False):
     pairwise_true = true[:,i_idx] > true[:,j_idx]
     if adaptive:
         fp_true = true.float()
-        step = (fp_true.var(dim=1, keepdim=True)**0.5) * 2 / 10
+        step = (fp_true.var(dim=1, keepdim=True)**0.5) * 6 / 10
         pairwise_scale = nn.functional.relu(true[:,i_idx] - true[:,j_idx]) * pairwise_true / step
+        pairwise_scale = torch.clip(pairwise_scale, min=0, max=10)
         margin = (pairwise_scale + 1) * base_margin
     else:
         margin = base_margin
@@ -119,32 +156,7 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
         td1 = time.time() - t1
         t2 = time.time()
 
-        binomial = torch.distributions.binomial.Binomial(probs=0.5)
-        if batch_other:
-            """
-            Sample some cached embedding of graph segements, 
-            use mean of cached + inferenced embedding as full-graph embedding.
-            """
-            batch_other = torch.cat(batch_other, dim=0)
-            mask =  binomial.sample((batch_other.shape[0], 1)).to(torch.device(cfg.device))
-            batch_other = batch_other.to(torch.device(cfg.device))
-            batch_other = batch_other * mask    
-            batch_other_embed = torch.zeros_like(graph_embed)
-            part_cnt = 0
-            for i, num_parts in enumerate(batch_num_parts):
-                m = num_parts - 1
-                batch_other_embed[i, :] += torch.sum(
-                    batch_other[part_cnt: part_cnt + m, :],
-                    dim=0, 
-                    keepdim=False
-                )
-                part_cnt += m
-            batch_num_parts = torch.Tensor(batch_num_parts).to(torch.device(cfg.device))
-            batch_num_parts = batch_num_parts.view(-1, 1)
-            multiplier_num = (batch_num_parts - 1)/ 2 + 1
-            pred = graph_embed * multiplier_num + batch_other_embed
-        else:
-            pred = graph_embed
+        pred = model.join_segments(graph_embed, batch_other, batch_num_parts)
         
         """
         Compute loss
@@ -152,7 +164,8 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
         if 'TPUGraphs' in cfg.dataset.name:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
-            loss = pairwise_hinge_loss_batch(pred, true, adaptive=cfg.train.adap_margin)
+            # loss = pairwise_hinge_loss_batch(pred, true, adaptive=cfg.train.adap_margin)
+            loss = listMLE(pred, true)
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred.detach().to('cpu', non_blocking=True)
         else:
@@ -177,12 +190,12 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
         for i in range(graph_embed.shape[0]):
             b = i // num_sample_config  # batch index
             src_graph = batch_list[b]
-            flat_ind = (
-                src_graph.partition_idx.cpu() + 
-                sampled_idx[b][i % num_sample_config] * (len(src_graph.partptr) - 1) + 
-                segments_to_train[b]
+            model.update_emb_table(
+                graph_embed[i], 
+                src_graph, 
+                sampled_idx[b][i % num_sample_config],
+                segments_to_train[b],
             )
-            emb_table.push(graph_embed[i].cpu(), flat_ind)
         
         logger.update_stats(true=_true,
                             pred=_pred,
@@ -245,7 +258,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
         pred = torch.zeros([
             len(batch_list), 
             batch_num_sample, 
-            1
+            cfg.train.gst.graph_embed_size,
         ]).to(
             torch.device(cfg.device)
         )
@@ -255,6 +268,15 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 for j in range(len(sampled_idx[i])):
                     pred[i, j, :] += res[part_cnt, :]
                     part_cnt += 1
+        assert part_cnt == len(res), f"Not coumsuming all {len(res)} from {res.shape} result Tensor!"
+
+        if cfg.train.gst.graph_embed_dims > 1:
+            # HACK: quick implemntation to support 2D embedding table inferece.
+            custom_gnn = model.model.model
+            last_layer = list(custom_gnn.children())[-1].layer_post_mp
+            new_pred = [last_layer(configs_pred) for configs_pred in pred]  # turn graph embedding into scalar
+            new_pred = torch.stack(new_pred, dim=0)
+            pred = new_pred
 
         extra_stats = {}
         if 'TPUGraphs' in cfg.dataset.name:
@@ -455,9 +477,9 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
                     model_artifact.add_file(ckpt_path, name=os.path.basename(ckpt_path))
                     wandb.log_artifact(model_artifact)
                 
-                if cfg.train.ckpt_clean:  # Delete old ckpt each time.
-                    clean_ckpt()
-            
+            if cfg.train.ckpt_clean:  # Delete old ckpt each time.
+                clean_ckpt()
+        
             logging.info(
                 f"> Epoch {cur_epoch}: took {full_epoch_times[-1]:.1f}s "
                 f"(avg {np.mean(full_epoch_times):.1f}s) | "

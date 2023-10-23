@@ -153,6 +153,8 @@ if __name__ == '__main__':
             input_feat_key=cfg.dataset.input_feat_key,
             extra_cfg_feat_keys=cfg.dataset.extra_cfg_feat_keys,
             extra_cfg_feat_dims=cfg.dataset.extra_cfg_feat_dims,
+            graph_embed_dims=cfg.train.gst.graph_embed_dims,
+            graph_embed_size=cfg.train.gst.graph_embed_size,
         ) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
         
         if cfg.train.mode == 'inference-tpu':  # Include all configs in test time.

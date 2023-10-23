@@ -256,7 +256,7 @@ class TPUGraphsNpz(Dataset):
         self._cache_limit = 80
         self._norm_op_feat = False
         super().__init__(root, transform, pre_transform, pre_filter)
-        self.meta
+        # self.meta
         self.data = Data(
             edge_index=None,
             op_feats=None,
@@ -353,6 +353,7 @@ class TPUGraphsNpz(Dataset):
         split_names = ['train', 'valid', 'test']
         split_dict = {'train': [], 'valid': [], 'test': []}
         parts_cnt = 0
+        config_counts = 0
         
         for idx, raw_path in enumerate(tqdm(self.raw_paths)):
             if self.task == 'layout':
@@ -409,12 +410,13 @@ class TPUGraphsNpz(Dataset):
                         config_feats=config_feats, config_idx=config_idx,
                         num_config=num_config, num_config_idx=num_config_idx, y=runtime, 
                         num_nodes=num_nodes, partptr=partptr, partition_idx=parts_cnt, 
-                        graph_name=graph_name,)
+                        graph_name=graph_name, graph_config_idx=config_counts, graph_idx=idx)
             
             if self.pre_transform is not None:
                 data = self.pre_transform(data)
             
             parts_cnt += num_parts * num_config
+            config_counts += num_config
             torch.save(data, out_path)
         torch.save(split_dict, self.processed_paths[-1])
 
