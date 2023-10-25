@@ -256,7 +256,8 @@ class TPUGraphsNpz(Dataset):
         self._cache_limit = 80
         self._norm_op_feat = False
         super().__init__(root, transform, pre_transform, pre_filter)
-        # self.meta
+        if self.cache_in_memory:
+            self.meta
         self.data = Data(
             edge_index=None,
             op_feats=None,
@@ -447,7 +448,7 @@ class TPUGraphsNpz(Dataset):
                     delattr(data, key)
             
             if self.cache_in_memory and len(self._cache) < self._cache_limit:
-                self._cache[idx] = copy.deepcopy(data)
+                self._cache[idx] = copy.deepcopy(data).share_memory_()
         
         data.config_feats = data.config_feats.float()
         data.source_dataset = f"{self.source}-{self.search}-{idx}" if self.task == 'layout' else f"xla-tile-{idx}"

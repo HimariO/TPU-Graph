@@ -1,9 +1,9 @@
-out_dir: tests/xla-default-2d-gst
-num_workers: 2
+out_dir: tests/xla-default-extra-2d-gst
+num_workers: 12
 num_threads: 16
 debug: false
 wandb:
-  use: false
+  use: true
   entity: togglec
   project: tpu-graph-v2
 dataset:
@@ -12,28 +12,29 @@ dataset:
   task: graph
   task_type: ranking
   transductive: False
-  dir: /home/ron/Projects/TPU-Graph/datasets/
+  dir: /home/ron_zhu/TPU-Graph/datasets/
   source: xla
   search: default
-  num_sample_config: 32
+  num_sample_config: 64
   eval_num_sample_config: 96
   input_feat_key: op_feat_enc_i
-  cache_in_memory: true
+  cache_in_memory: false
   khop:
     use: true
     hops: 2
     bidirect: true
-  config_sampler: IntervalSampler
+  # config_sampler: IntervalSampler
   extra_cfg_feat_keys: ["extra_feat"]
   extra_cfg_feat_dims: 280
 
 train:
   mode: custom_tpu
-  batch_size: 4
+  batch_size: 8
   eval_period: 32
   ckpt_period: 100
   sampler: full_batch
   auto_resume: true
+  adap_margin: true
   ckpt_clean: true
   gst:
     graph_embed_dims: 2
@@ -61,9 +62,9 @@ gnn:
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 4000
+  max_epoch: 2500
   batch_accumulation: 1
 share:
   dim_in: 286
 device: cuda
-# model_ckpt: xla-default-on0la3k3-2175.ckpt
+# model_ckpt: tests/nlp-random-fullenc-ft/tpu-pe-fullenc/0/best-447.ckpt

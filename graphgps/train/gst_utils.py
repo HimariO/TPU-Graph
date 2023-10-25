@@ -319,6 +319,9 @@ class TPUModel(torch.nn.Module):
         # TODO: maybe adding drop out on "embedding" of batch_other here.
         alpha = 1 / batch_num_parts
         beta = (batch_num_parts - 1) / batch_num_parts
+        zero_mask = batch_other.abs().sum(dim=-1) < 1e-6
+        alpha[zero_mask] = 1.0
+        beta[zero_mask] = 0.0
         pred = alpha * cur_segment + beta * batch_other
 
         if self.graph_embed_dims == 2:
