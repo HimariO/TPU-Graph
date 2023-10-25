@@ -164,8 +164,8 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
         if 'TPUGraphs' in cfg.dataset.name:
             pred = pred.view(-1, num_sample_config)
             true = true.view(-1, num_sample_config)
-            # loss = pairwise_hinge_loss_batch(pred, true, adaptive=cfg.train.adap_margin)
-            loss = listMLE(pred, true)
+            loss = pairwise_hinge_loss_batch(pred, true, adaptive=cfg.train.adap_margin)
+            # loss = listMLE(pred, true)
             _true = true.detach().to('cpu', non_blocking=True)
             _pred = pred.detach().to('cpu', non_blocking=True)
         else:
@@ -424,7 +424,7 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
 
         # Log current best stats on eval epoch.
         if is_eval_epoch(cur_epoch):
-            best_epoch = np.array([vp['loss'] for vp in val_perf]).argmin()
+            best_epoch = np.array([vp['opa'] for vp in val_perf]).argmax()
             best_train = best_val = best_test = ""
             if cfg.metric_best != 'auto':
                 # Select again based on val perf of `cfg.metric_best`.

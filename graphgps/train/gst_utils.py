@@ -275,7 +275,7 @@ class TPUModel(torch.nn.Module):
     
     def _join_1d_segments(self, cur_segment: Tensor, batch_other: List[Tensor], batch_num_parts: List[int]) -> Tensor:
         if batch_other:
-            binomial = torch.distributions.binomial.Binomial(probs=0.5)
+            binomial = torch.distributions.binomial.Binomial(probs=0.333)
             """
             Sample some cached embedding of graph segements, 
             use mean of cached + inferenced embedding as full-graph embedding.
