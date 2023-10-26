@@ -50,7 +50,7 @@ posenc_RWSE:
   raw_norm_type: BatchNorm
 
 train:
-  mode: inference-tpu
+  mode: custom_tpu
   batch_size: 2
   eval_period: 32
   ckpt_period: 100
