@@ -36,15 +36,17 @@ from graphgps.train.custom_loss import apply_tpu_loss
 
 
 @ulogger.catch(reraise=True)
-def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table: History, batch_accumulation: int):
+def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table: History, batch_accumulation: int, epoch=0):
     model.train()
     optimizer.zero_grad()
     time_start = time.time()
     num_sample_config = cfg.dataset.num_sample_config  # number of configs per graph
 
     if cfg.debug: print(f"@ Start of Epoch")
-
-    for iter, batch in enumerate(tqdm(loader)):
+    
+    loader_bar = tqdm(loader)
+    loader_bar.set_description_str(f"Epoch[{epoch}]")
+    for iter, batch in enumerate(loader_bar):
         if cfg.debug: print(f"@ iter-{iter} start")
         batch, sampled_idx = batch
         
@@ -330,7 +332,7 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
         start_time = time.perf_counter()
         try:
             train_epoch(loggers[0], loaders[0], model, optimizer, scheduler, model.history,
-                        cfg.optim.batch_accumulation)
+                        cfg.optim.batch_accumulation, epoch=cur_epoch)
         except KeyboardInterrupt:
             save_ckpt(model, optimizer, scheduler, cur_epoch)
             break

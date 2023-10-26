@@ -37,7 +37,7 @@ train:
   adap_margin: true
 model:
   type: custom_tpu_gnn
-  loss_fun: neural_ndcg
+  loss_fun: neural_sort
   edge_decoding: dot
   graph_pooling: add
 gnn:

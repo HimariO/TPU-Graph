@@ -23,9 +23,9 @@ dataset:
     use: true
     hops: 2
     bidirect: true
-  # config_sampler: IntervalSampler
-  extra_cfg_feat_keys: ["extra_feat"]
-  extra_cfg_feat_dims: 280
+  config_sampler: IntervalSampler
+  extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
+  extra_cfg_feat_dims: 316
 
 train:
   mode: custom_tpu

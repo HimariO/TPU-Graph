@@ -34,6 +34,7 @@ train:
   ckpt_period: 100
   sampler: full_batch
   auto_resume: true
+  adap_margin: true
 model:
   type: custom_tpu_gnn
   loss_fun: cross_entropy
