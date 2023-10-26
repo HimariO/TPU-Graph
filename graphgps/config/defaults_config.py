@@ -41,6 +41,7 @@ def extended_cfg(cfg):
     cfg.train.gst = CN()
     cfg.train.gst.graph_embed_dims = 1
     cfg.train.gst.graph_embed_size = 1
+    cfg.train.gst.sample_full_graph = False
 
     cfg.dataset.source = 'nlp'
     cfg.dataset.search = 'random'

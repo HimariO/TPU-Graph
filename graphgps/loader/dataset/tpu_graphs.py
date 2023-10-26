@@ -167,7 +167,6 @@ class IntervalSampler:
             if mask.any():
                 sample_idx[i + 1:][mask] = self.intervals[ind][resample_ptr: resample_ptr + mask.sum()]
                 resample_ptr += mask.sum()
-            # checked.add(i)
         return sample_idx
 
 

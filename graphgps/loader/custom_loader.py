@@ -47,12 +47,12 @@ from torch_geometric.graphgym.loader import (
 from torch_geometric.data import Batch, Data
 from torch_sparse import SparseTensor
 from graphgps.loader.dataset.tpu_graphs import IntervalSampler
-from graphgps.train.gst_utils import batch_sample_graph_segs
+from graphgps.train.gst_utils import batch_sample_graph_segs, batch_sample_full
 
 index2mask = index_to_mask  # TODO Backward compatibility
 
 
-def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False, sampler=None):
+def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False, sampler=None, full_graph=False):
     
     # batch_list = batch.to_data_list()
     batch_list = batch
@@ -108,10 +108,16 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False, sa
     # breakpoint()
     processed_batch_list = Batch.from_data_list(processed_batch_list)
     if train_graph_segment:
-        return (
-            batch_sample_graph_segs(processed_batch_list, num_sample_config=num_sample_configs), 
-            sample_idx
-        )
+        if full_graph:
+            return (
+                batch_sample_full(processed_batch_list, num_sample_config=num_sample_configs), 
+                sample_idx
+            )
+        else:
+            return (
+                batch_sample_graph_segs(processed_batch_list, num_sample_config=num_sample_configs), 
+                sample_idx
+            )
     else:
         return processed_batch_list, sample_idx
 
@@ -131,12 +137,14 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
                 preprocess_batch,
                 train_graph_segment=True,
                 num_sample_configs=cfg.dataset.num_sample_config,
+                full_graph=cfg.train.gst.sample_full_graph,
                 sampler=sampler,
             ) 
             if train else 
             partial(
                 preprocess_batch,
-                num_sample_configs=cfg.dataset.eval_num_sample_config
+                num_sample_configs=cfg.dataset.eval_num_sample_config,
+                full_graph=cfg.train.gst.sample_full_graph,
             ) 
         )
         

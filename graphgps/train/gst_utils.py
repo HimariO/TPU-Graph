@@ -57,30 +57,30 @@ def batch_sample_graph_segs(batch: Union[Batch, List[Data]], num_sample_config=3
         segments_to_train.append(segment_to_train)
         
         for j in range(num_parts):
-            start = int(partptr[j])
-            length = int(partptr[j + 1]) - start
-
-            N, E = batch_list[i].num_nodes, batch_list[i].num_edges
-            data = copy.copy(batch_list[i])
-            del data.num_nodes
-            adj, data.adj = data.adj, None  # adj is a SparseTensor
-
-            adj = adj.narrow(0, start, length).narrow(1, start, length)
-            edge_idx = adj.storage.value()
-
-            for key, item in data:
-                if isinstance(item, torch.Tensor) and item.size(0) == N:
-                    # get subset of node features
-                    data[key] = item.narrow(0, start, length)
-                elif isinstance(item, torch.Tensor) and item.size(0) == E and item.ndim > 1:
-                    # get subset of edge features
-                    data[key] = item[edge_idx]
-                else:
-                    data[key] = item
-
-            row, col, _ = adj.coo()
-            data.edge_index = torch.stack([row, col], dim=0)
             if j == segment_to_train or all_segment:
+                start = int(partptr[j])
+                length = int(partptr[j + 1]) - start
+
+                N, E = batch_list[i].num_nodes, batch_list[i].num_edges
+                data = copy.copy(batch_list[i])
+                del data.num_nodes
+                adj, data.adj = data.adj, None  # adj is a SparseTensor
+
+                adj = adj.narrow(0, start, length).narrow(1, start, length)
+                edge_idx = adj.storage.value()
+
+                for key, item in data:
+                    if isinstance(item, torch.Tensor) and item.size(0) == N:
+                        # get subset of node features
+                        data[key] = item.narrow(0, start, length)
+                    elif isinstance(item, torch.Tensor) and item.size(0) == E and item.ndim > 1:
+                        # get subset of edge features
+                        data[key] = item[edge_idx]
+                    else:
+                        data[key] = item
+
+                row, col, _ = adj.coo()
+                data.edge_index = torch.stack([row, col], dim=0)
                 # create same graph-segment for each layout config
                 for k in range(len(data.y)):
                     unfold_g = Data(
@@ -98,6 +98,50 @@ def batch_sample_graph_segs(batch: Union[Batch, List[Data]], num_sample_config=3
                         sampled = getattr(data, feat_key)[:, k, :]
                         setattr(unfold_g, feat_key, sampled)
                     batch_train_list.append(unfold_g)
+
+    return (
+        batch,
+        batch_list,
+        batch_train_list,
+        batch_num_parts,
+        segments_to_train,
+    )
+
+
+def batch_sample_full(batch: Union[Batch, List[Data]], num_sample_config=32, train=True, all_segment=False):
+    # HACK: doing the reduant `to_data_list` here so every tensor in Data will be at least 1D
+    batch_list = batch.to_data_list() if isinstance(batch, Batch) else batch
+    batch_num_parts = []
+    segments_to_train = []
+    batch_train_list = []
+    
+    for i in range(len(batch_list)):
+        partptr = batch_list[i].partptr.cpu().numpy()
+        num_parts = len(partptr) - 1
+        if train:
+            batch_num_parts.extend([1] * num_sample_config)
+        else:
+            batch_num_parts.append(1)  # HACK
+        segments_to_train.append(0)
+        
+        data = batch_list[i]
+
+        for k in range(len(data.y)):
+            unfold_g = Data(
+                edge_index=data.edge_index,
+                op_feats=data.op_feats,
+                op_code=data.op_code,
+                config_feats=data.config_feats_full[:, k, :], 
+                num_nodes=data.num_nodes,
+            )
+
+            for key in data.keys:
+                if key not in unfold_g.keys:
+                    setattr(unfold_g, key, getattr(data, key))
+            for feat_key in cfg.dataset.extra_cfg_feat_keys:
+                sampled = getattr(data, feat_key)[:, k, :]
+                setattr(unfold_g, feat_key, sampled)
+            batch_train_list.append(unfold_g)
 
     return (
         batch,
