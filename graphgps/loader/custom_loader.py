@@ -46,7 +46,7 @@ from torch_geometric.graphgym.loader import (
 )
 from torch_geometric.data import Batch, Data
 from torch_sparse import SparseTensor
-from graphgps.loader.dataset.tpu_graphs import IntervalSampler
+from graphgps.loader.dataset.tpu_graphs import IntervalSampler, BasicSampler
 from graphgps.train.gst_utils import batch_sample_graph_segs, batch_sample_full
 
 index2mask = index_to_mask  # TODO Backward compatibility
@@ -130,7 +130,7 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
         if train and cfg.dataset.config_sampler in config_sampler:
             sampler = config_sampler[cfg.dataset.config_sampler]()
         else:
-            sampler = None
+            sampler = BasicSampler()
         
         collate_fn = (
             partial(

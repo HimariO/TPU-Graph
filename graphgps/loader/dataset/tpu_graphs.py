@@ -125,6 +125,45 @@ class DatasetStatistics:
     max_node_per_graph: int
 
 
+
+class BasicSampler:
+    """
+    random sample configs and (try to )remove duplication
+    """
+
+    def resample(self, graph: Data, num_sample_configs: int):
+        num_config = graph.num_config.item()
+        all_zero = (graph.y < 1e-9).all()
+        if all_zero or random.random() < 0.5:  # runtime can't be sort
+            return torch.randint(0, num_config, (num_sample_configs,))
+        
+        randperm = torch.randperm(num_config)
+        sample_idx = randperm[:num_sample_configs]
+        sample_cfg = graph.config_feats.view(graph.num_config, graph.num_config_idx, -1)
+        sample_cfg = sample_cfg[sample_idx, ...]
+
+        resample_ptr = num_sample_configs
+        for i, cfeat in enumerate(sample_cfg):
+            delta = torch.abs(sample_cfg[i + 1:] - cfeat).sum(axis=-1).sum(axis=-1)
+            mask = delta < 1e-6
+            if mask.any():
+                # NOTE: overwrite duplicated samples with same id, so at least the label will also be the same 
+                # if we will to find the alternative samples, and we can exclue the duplicans in loss func by looking at label.
+                sample_idx[i + 1:][mask] = sample_idx[i]
+            if resample_ptr >= num_config:
+                break
+            if mask.any():
+                sample_idx[i + 1:][mask] = randperm[resample_ptr: resample_ptr + mask.sum()]
+                resample_ptr += mask.sum()
+        
+        if len(sample_idx) < num_sample_configs:
+            mis = num_sample_configs - len(sample_idx)
+            pad = torch.zeros([mis], dtype=sample_idx.dtype, device=sample_idx.device) + sample_idx[0]
+            sample_idx = torch.cat([sample_idx, pad], dim=0)
+        
+        return sample_idx
+
+
 class IntervalSampler:
     """
     Each graph can have upto tens thoughs of config, and each config will have one runtime as the groundtruth ref of the model.
@@ -139,7 +178,7 @@ class IntervalSampler:
         self.intervals = {}
     
     def resample(self, graph: Data, num_sample_configs: int):
-        all_zero = (graph.y < 1e-6).all()
+        all_zero = (graph.y < 1e-9).all()
         if all_zero or random.random() < 0.5:  # runtime can't be sort
             return torch.randint(0, graph.num_config.item(), (num_sample_configs,))
         
