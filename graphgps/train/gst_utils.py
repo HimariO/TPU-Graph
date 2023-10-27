@@ -199,6 +199,7 @@ class TPUModel(torch.nn.Module):
             extra_cfg_feat_dims=0,
             graph_embed_dims=1,
             graph_embed_size=1,
+            regression=False,
         ):
         super().__init__()
         self.model = model
@@ -206,6 +207,10 @@ class TPUModel(torch.nn.Module):
         self.linear_map = nn.Linear(286, 128, bias=True)
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
         self.config_weights = nn.Parameter(torch.ones(1, 18, requires_grad=True) * 100)
+        
+        if regression:
+            self.reg_scale = nn.Parameter(torch.ones(1, requires_grad=True))
+            self.reg_offset = nn.Parameter(torch.zeros(1, requires_grad=True))
         
         self.graph_embed_dims = graph_embed_dims
         if graph_embed_dims == 1:

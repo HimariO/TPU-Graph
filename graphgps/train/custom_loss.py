@@ -5,7 +5,7 @@ from torch_geometric.graphgym.config import cfg
 from loguru import logger
 
 
-def apply_tpu_loss(y_pred, y_true):
+def apply_rank_loss(y_pred, y_true):
     
     # def rescale(y: torch.Tensor):
     #     assert y.ndim == 2, f"{y.ndim} != 2"
@@ -41,6 +41,17 @@ def apply_tpu_loss(y_pred, y_true):
         cfg.model.loss_fun = 'hinge'
         loss = pairwise_hinge_loss_batch(y_pred, y_true, **kwargs)
     return loss
+
+
+def apply_regression_loss(y_pred, y_true, model):
+    y_true = y_true.float()
+    if cfg.train.regression.val_min >= 0:
+        y_true -= cfg.train.regression.val_min
+        if cfg.train.regression.val_max > cfg.train.regression.val_min:
+            scope = cfg.train.regression.val_max - cfg.train.regression.val_min
+            y_true = (y_true / scope) * 100
+    pred = model.reg_scale * y_pred + model.reg_offset
+    return nn.functional.mse_loss(pred, y_true)
 
 
 def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False, **kwargs):
@@ -315,7 +326,7 @@ def dcg(y_pred, y_true, ats=None, gain_function=lambda x: torch.pow(2, x) - 1, p
     return dcg
 
 
-def neuralNDCG(y_pred, y_true, padded_value_indicator=-1, temperature=1., powered_relevancies=True, k=None,
+def neuralNDCG(y_pred, y_true, padded_value_indicator=-1, temperature=1., powered_relevancies=False, k=None,
                stochastic=False, n_samples=32, beta=0.1, log_scores=True, **kwargs):
     """
     NeuralNDCG loss introduced in "NeuralNDCG: Direct Optimisation of a Ranking Metric via Differentiable

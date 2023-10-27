@@ -38,6 +38,12 @@ def extended_cfg(cfg):
     # instead, when False, follow cfg.train.eval_period checkpointing frequency.
     cfg.train.ckpt_best = True
     cfg.train.adap_margin = False
+    
+    cfg.train.regression = CN()
+    cfg.train.regression.use = False
+    cfg.train.regression.val_min = -1
+    cfg.train.regression.val_max = -1
+
     cfg.train.gst = CN()
     cfg.train.gst.graph_embed_dims = 1
     cfg.train.gst.graph_embed_size = 1
