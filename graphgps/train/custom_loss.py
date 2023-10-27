@@ -1,11 +1,12 @@
 import torch
 import numpy as np
+import diffsort
 from torch import nn
 from torch_geometric.graphgym.config import cfg
 from loguru import logger
 
 
-def apply_rank_loss(y_pred, y_true):
+def apply_rank_loss(y_pred, y_true, train=True):
     
     # def rescale(y: torch.Tensor):
     #     assert y.ndim == 2, f"{y.ndim} != 2"
@@ -24,6 +25,7 @@ def apply_rank_loss(y_pred, y_true):
     
     kwargs = {
         "adaptive": cfg.train.adap_margin,
+        "train": train,
     }
     
     if cfg.model.loss_fun == 'hinge':
@@ -36,6 +38,8 @@ def apply_rank_loss(y_pred, y_true):
         loss = neuralNDCG(y_pred, rescale(y_true).float(), **kwargs)
     elif cfg.model.loss_fun == 'neural_sort':
         loss = neural_sort(y_pred, rescale(y_true), **kwargs)
+    elif cfg.model.loss_fun == 'diffsort':
+        loss = diffsort_loss(y_pred, rescale(y_true), **kwargs)
     else:
         logger.warning(f"Getting a unknown loss function setting: {cfg.model.loss_fun}, fallback to hinge loss")
         cfg.model.loss_fun = 'hinge'
@@ -199,7 +203,7 @@ def deterministic_neural_sort(s, tau, mask, softmax=True):
     :param s: values to sort, shape [batch_size, slate_length]
     :param tau: temperature for the final softmax function
     :param mask: mask indicating padded elements
-    :return: approximate permutation matrices of shape [batch_size, slate_length, slate_length]
+    :return: approximate permutation matrices of shape [batch_size, slate_length, slate_length] {batch, class, samples}
     """
     dev = s.device
 
@@ -418,15 +422,48 @@ def neural_sort(y_pred, y_true, padded_value_indicator=-1, **kwargs):
     # return loss
     
     n = y_true.size(1)
-    P_hat = torch.permute(P_hat, [0, 2, 1])
+    # P_hat = torch.permute(P_hat, [0, 2, 1])
 
-    # P_true = deterministic_neural_sort(
-    #     y_true.unsqueeze(-1).float(),
-    #     tau=1, 
-    #     mask=mask, 
-    #     softmax=True
-    # )
+    P_true = deterministic_neural_sort(
+        y_true.unsqueeze(-1).float(),
+        tau=1, 
+        mask=mask, 
+        softmax=True
+    )
     # P_true = torch.permute(P_true, [0, 2, 1])
+    # P_true[0, :, 1].argmax()
+    return nn.functional.cross_entropy(P_hat, P_true)
+    # return nn.functional.cross_entropy(P_hat, n - y_true - 1)
 
-    # return nn.functional.cross_entropy(P_hat, P_true)
-    return nn.functional.cross_entropy(P_hat, n - y_true - 1)
+
+SORTERS = None
+
+def init_sorters():
+    global SORTERS
+    SORTERS = {
+        'train': diffsort.DiffSortNet(
+            sorting_network_type='odd_even',
+            size=cfg.dataset.num_sample_config,
+            device=cfg.device,
+            steepness=10,
+            art_lambda=0.25,
+        ),
+        'val': diffsort.DiffSortNet(
+            sorting_network_type='odd_even',
+            size=cfg.dataset.eval_num_sample_config,
+            device=cfg.device,
+            steepness=10,
+            art_lambda=0.25,
+        ),
+    }
+
+
+def diffsort_loss(y_pred, y_true, train=True, **kwargs):
+    global SORTERS
+    if SORTERS is None:
+        init_sorters()
+    sorter = SORTERS['train'] if train else SORTERS['val']
+    perm_ground_truth = torch.nn.functional.one_hot(torch.argsort(y_true, dim=-1)).transpose(-2, -1).float()
+    _, perm_prediction = sorter(y_pred)
+    loss = torch.nn.BCELoss()(perm_prediction, perm_ground_truth)
+    return loss
