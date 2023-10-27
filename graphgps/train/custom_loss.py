@@ -51,13 +51,15 @@ def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False, **kwa
     i_idx = torch.arange(num_preds).repeat(num_preds)
     j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
 
-    pairwise_true = true[:,i_idx] > true[:,j_idx]
+    pairwise_true = true[:,i_idx] - true[:,j_idx] > 1e-9
     if adaptive:
         fp_true = true.float()
-        step = (fp_true.var(dim=1, keepdim=True)**0.5) * 6 / 10
+        step = (fp_true.var(dim=1, keepdim=True)**0.5)
+        step = torch.clip(step, min=1e-5)
+        step = step* 6 / 10
         pairwise_scale = nn.functional.relu(true[:,i_idx] - true[:,j_idx]) * pairwise_true / step
         pairwise_scale = torch.clip(pairwise_scale, min=0, max=10)
-        margin = (pairwise_scale + 1) * base_margin
+        margin = (pairwise_scale + 0) * base_margin
     else:
         margin = base_margin
 
@@ -191,20 +193,23 @@ def deterministic_neural_sort(s, tau, mask, softmax=True):
     dev = s.device
 
     n = s.size()[1]
-    one = torch.ones((n, 1), dtype=torch.float32, device=dev)
     s = s.masked_fill(mask[:, :, None], -1e8)
-    A_s = torch.abs(s - s.permute(0, 2, 1))
+    A_s = torch.abs(s - s.permute(0, 2, 1))  # pairwise difference
     A_s = A_s.masked_fill(mask[:, :, None] | mask[:, None, :], 0.0)
 
-    B = torch.matmul(A_s, torch.matmul(one, torch.transpose(one, 0, 1)))
+    one = torch.ones((n, n), dtype=torch.float32, device=dev)
+    B = torch.matmul(A_s, one)  # B[i, j] = A_s[i].sum()
 
-    temp = [n - m + 1 - 2 * (torch.arange(n - m, device=dev) + 1) for m in mask.squeeze(-1).sum(dim=1)]
+    temp = [
+        (n - m + 1) - 2 * (torch.arange(n - m, device=dev) + 1) 
+        for m in mask.squeeze(-1).sum(dim=1)
+    ]
     temp = [t.type(torch.float32) for t in temp]
-    temp = [torch.cat((t, torch.zeros(n - len(t), device=dev))) for t in temp]
+    temp = [torch.cat((t, torch.zeros(n - len(t), device=dev))) for t in temp]  # padding masked part
     scaling = torch.stack(temp).type(torch.float32).to(dev)  # type: ignore
 
     s = s.masked_fill(mask[:, :, None], 0.0)
-    C = torch.matmul(s, scaling.unsqueeze(-2))
+    C = torch.matmul(s, scaling.unsqueeze(-2))  # score[i], rank multiplier scaling[j], pairwise prod
 
     P_max = (C - B).permute(0, 2, 1)
     P_max = P_max.masked_fill(mask[:, :, None] | mask[:, None, :], -np.inf)
@@ -376,8 +381,11 @@ def neuralNDCG(y_pred, y_true, padded_value_indicator=-1, temperature=1., powere
 
 
 def neural_sort(y_pred, y_true, padded_value_indicator=-1, **kwargs):
-    dev = y_pred.device
-    k = y_true.shape[1]
+    # k = torch.arange(y_pred.shape[-1])
+    # batch = y_pred.shape[0]
+    # order = torch.sort(y_true, dim=-1).indices
+    # for b in range(batch):
+    #     y_pred[b] = y_pred[b][order[b]]
 
     mask = (y_true == padded_value_indicator)
     P_hat = deterministic_neural_sort(
@@ -387,13 +395,27 @@ def neural_sort(y_pred, y_true, padded_value_indicator=-1, **kwargs):
         softmax=False
     )
 
-    # Perform sinkhorn scaling to obtain doubly stochastic permutation matrices
-    # P_hat = sinkhorn_scaling(P_hat.view(P_hat.shape[0] * P_hat.shape[1], P_hat.shape[2], P_hat.shape[3]),
-    #                          mask.repeat_interleave(P_hat.shape[0], dim=0), tol=1e-6, max_iter=50)
-    # P_hat = P_hat.view(int(P_hat.shape[0] / y_pred.shape[0]), y_pred.shape[0], P_hat.shape[1], P_hat.shape[2])
-
-    # Mask P_hat and apply to true labels, ie approximately sort them
-    # P_hat = P_hat.masked_fill(mask[None, :, :, None] | mask[None, :, None, :], 0.)
+    # loss = []
+    # for i in range(y_pred.shape[-1]):
+    #     if i == 0: continue
+    #     # cut = P_hat[:, i, :i + 1]
+    #     # local_label = torch.zeros([batch], device=y_pred.device, dtype=torch.int64)
+    #     cut = P_hat[:, i, ~i:]
+    #     local_label = torch.zeros([batch], device=y_pred.device, dtype=torch.int64)
+    #     loss.append(nn.functional.cross_entropy(cut, local_label))
+    # loss = torch.stack(loss).mean()
+    # return loss
+    
+    n = y_true.size(1)
     P_hat = torch.permute(P_hat, [0, 2, 1])
 
-    return nn.functional.cross_entropy(P_hat, y_true)
+    # P_true = deterministic_neural_sort(
+    #     y_true.unsqueeze(-1).float(),
+    #     tau=1, 
+    #     mask=mask, 
+    #     softmax=True
+    # )
+    # P_true = torch.permute(P_true, [0, 2, 1])
+
+    # return nn.functional.cross_entropy(P_hat, P_true)
+    return nn.functional.cross_entropy(P_hat, n - y_true - 1)

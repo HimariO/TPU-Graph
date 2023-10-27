@@ -165,8 +165,19 @@ class IntervalSampler:
             delta = torch.abs(sample_cfg[i + 1:] - cfeat).sum(axis=-1).sum(axis=-1)
             mask = delta < 1e-6
             if mask.any():
+                # NOTE: overwrite duplicated samples with same id, so at least the label will also be the same 
+                # if we will to find the alternative samples, and we can exclue the duplicans in loss func by looking at label.
+                sample_idx[i + 1:][mask] = sample_idx[i]
+            if resample_ptr >= len(self.intervals[ind]):
+                break
+            if mask.any():
                 sample_idx[i + 1:][mask] = self.intervals[ind][resample_ptr: resample_ptr + mask.sum()]
                 resample_ptr += mask.sum()
+        
+        if len(sample_idx) < num_sample_configs:
+            mis = num_sample_configs - len(sample_idx)
+            pad = torch.zeros([mis], dtype=sample_idx.dtype, device=sample_idx.device) + sample_idx[0]
+            sample_idx = torch.cat([sample_idx, pad], dim=0)
         return sample_idx
 
 
