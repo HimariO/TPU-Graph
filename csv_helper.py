@@ -302,6 +302,34 @@ def insert_graph_id(root_dir, source, search):
             torch.save(data, file)
 
 
+def norm_gt_runtime(root_dir, source, search):
+    from torch_geometric.data import Batch, Data
+    from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
+
+    dataset = TPUGraphsNpz(root_dir, source=source, search=search, task='layout')
+    
+    max_y = -math.inf
+    min_y = math.inf
+    for file in tqdm(dataset.processed_file_names):
+        file = os.path.join(dataset.processed_dir, file)
+        data = torch.load(file)
+        if isinstance(data, Data):
+            max_y = max(max_y, float(data.y.max()))
+            if (data.y.min() > 1e-6).any():  # ignore empty/placeholder label
+                min_y = min(min_y, float(data.y.min()))
+    
+    print("max_y", max_y)
+    print("min_y", min_y)
+    
+    # for file in tqdm(dataset.processed_file_names):
+    #     file = os.path.join(dataset.processed_dir, file)
+    #     data = torch.load(file)
+    #     if isinstance(data, Data):
+    #         data.y = (data.y.float() - min_y) / (max_y - min_y)
+    #         data.y = data.y * 2 - 1.0  # scale to -1.0 ~ 1.0
+    #         torch.save(data, file)
+
+
 def int8_config_feat(dir):
     files = glob.glob(os.path.join(dir, 'xla_tile*.pt'))
     int16 = 0
@@ -634,4 +662,5 @@ if __name__ == '__main__':
         inpsect_dataset.__name__: inpsect_dataset,
         dataset_sharding.__name__: dataset_sharding,
         insert_graph_id.__name__: insert_graph_id,
+        norm_gt_runtime.__name__: norm_gt_runtime,
     })

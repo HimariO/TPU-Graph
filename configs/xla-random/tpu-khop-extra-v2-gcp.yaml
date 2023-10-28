@@ -41,9 +41,10 @@ train:
     use: false
     val_min: 4729001
     val_max: 794889543954
+    weight: 1.0
 model:
   type: custom_tpu_gnn
-  loss_fun: listmle
+  loss_fun: ranknet
   edge_decoding: dot
   graph_pooling: add
 gnn:

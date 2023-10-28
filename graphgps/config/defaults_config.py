@@ -43,6 +43,7 @@ def extended_cfg(cfg):
     cfg.train.regression.use = False
     cfg.train.regression.val_min = -1
     cfg.train.regression.val_max = -1
+    cfg.train.regression.weight = 1.0
 
     cfg.train.gst = CN()
     cfg.train.gst.graph_embed_dims = 1
