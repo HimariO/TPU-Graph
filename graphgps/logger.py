@@ -186,15 +186,18 @@ class CustomLogger(Logger):
         reformat = lambda x: round(float(x), cfg.round)
         opas = []
         corrs = []
+        mses = []
         for true, pred in zip(self._true, self._pred):
             true = true.numpy()
             pred = pred.numpy()
             for i in range(true.shape[0]):
                 opas.append(eval_opa(true[i], pred[i]))
                 corrs.append(eval_spearmanr(true[i], pred[i])['spearmanr'])
+                mses.append(((pred[i] - true[i])**2).mean())
         return {
             'opa': reformat(np.mean(opas)),
             'spearmanr': reformat(np.mean(corrs)),
+            'mse': reformat(np.mean(mses)),
         }
 
     def regression(self):

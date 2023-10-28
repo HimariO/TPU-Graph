@@ -110,8 +110,11 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
             loss = apply_rank_loss(pred, true, train=True)
             if cfg.train.regression.use:
                 loss += apply_regression_loss(pred, true, model)
+                _pred = pred.detach() * model.reg_scale + model.reg_offset
+                _pred = _pred.to('cpu', non_blocking=True)
+            else:
+                _pred = pred.detach().to('cpu', non_blocking=True)
             _true = true.detach().to('cpu', non_blocking=True)
-            _pred = pred.detach().to('cpu', non_blocking=True)
         else:
             loss, pred_score = compute_loss(pred, true)
             _true = true.detach().to('cpu', non_blocking=True)
@@ -227,8 +230,13 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
             pred = pred.view(-1, batch_num_sample)
             true = true.view(-1, batch_num_sample)
             loss = apply_rank_loss(pred, true, train=False)
+
             _true = true.detach().to('cpu')
-            _pred = pred.detach().to('cpu')
+            if cfg.train.regression.use:
+                _pred = pred.detach() * model.reg_scale + model.reg_offset
+                _pred = _pred.to('cpu')
+            else:
+                _pred = pred.detach().to('cpu')
             
             cur_task = cfg.dataset.get('tpu_task', 'layout')
             for batch_i, (runtimes, gt, indies) in enumerate(zip(_pred, _true, sampled_idx)):

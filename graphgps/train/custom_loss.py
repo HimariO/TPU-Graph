@@ -19,9 +19,10 @@ def apply_rank_loss(y_pred, y_true, train=True):
         assert y.ndim == 2, f"{y.ndim} != 2"
         ord_idx = torch.sort(y, dim=-1).indices
         rank = torch.arange(0, y.size(1)).to(y.device) # .repeat(y.size(0), 1)
+        new_y = torch.zeros_like(y, dtype=rank.dtype)
         for i, order in enumerate(ord_idx):
-            y[i][order] = rank
-        return y
+            new_y[i][order] = rank
+        return new_y
     
     kwargs = {
         "adaptive": cfg.train.adap_margin,
@@ -49,11 +50,11 @@ def apply_rank_loss(y_pred, y_true, train=True):
 
 def apply_regression_loss(y_pred, y_true, model):
     y_true = y_true.float()
-    if cfg.train.regression.val_min >= 0:
-        y_true -= cfg.train.regression.val_min
-        if cfg.train.regression.val_max > cfg.train.regression.val_min:
-            scope = cfg.train.regression.val_max - cfg.train.regression.val_min
-            y_true = (y_true / scope) * 100
+    # if cfg.train.regression.val_min >= 0:
+    #     y_true -= cfg.train.regression.val_min
+    #     if cfg.train.regression.val_max > cfg.train.regression.val_min:
+    #         scope = cfg.train.regression.val_max - cfg.train.regression.val_min
+    #         y_true = (y_true / scope) * 100
     pred = model.reg_scale * y_pred + model.reg_offset
     return nn.functional.mse_loss(pred, y_true)
 
@@ -291,7 +292,7 @@ def __apply_mask_and_get_true_sorted_by_preds(y_pred, y_true, padding_indicator=
     return torch.gather(y_true, dim=1, index=indices)
 
 
-def dcg(y_pred, y_true, ats=None, gain_function=lambda x: torch.pow(2, x) - 1, padding_indicator=-1):
+def dcg(y_pred, y_true, ats=None, gain_function=lambda x: torch.pow(2, x) - 1, padding_indicator=-1, discount=True):
     """
     Discounted Cumulative Gain at k.
 
@@ -314,8 +315,11 @@ def dcg(y_pred, y_true, ats=None, gain_function=lambda x: torch.pow(2, x) - 1, p
 
     true_sorted_by_preds = __apply_mask_and_get_true_sorted_by_preds(y_pred, y_true, padding_indicator)
 
-    discounts = (torch.tensor(1) / torch.log2(torch.arange(true_sorted_by_preds.shape[1], dtype=torch.float) + 2.0)).to(
-        device=true_sorted_by_preds.device)
+    if discount:
+        discounts = (torch.tensor(1) / torch.log2(torch.arange(true_sorted_by_preds.shape[1], dtype=torch.float) + 2.0))
+        discounts = discounts.to(device=true_sorted_by_preds.device)
+    else:
+        discounts = 1.0
 
     gains = gain_function(true_sorted_by_preds)
 
@@ -331,7 +335,7 @@ def dcg(y_pred, y_true, ats=None, gain_function=lambda x: torch.pow(2, x) - 1, p
 
 
 def neuralNDCG(y_pred, y_true, padded_value_indicator=-1, temperature=1., powered_relevancies=False, k=None,
-               stochastic=False, n_samples=32, beta=0.1, log_scores=True, **kwargs):
+               stochastic=False, n_samples=32, beta=0.1, log_scores=True, discount=False, **kwargs):
     """
     NeuralNDCG loss introduced in "NeuralNDCG: Direct Optimisation of a Ranking Metric via Differentiable
     Relaxation of Sorting" - https://arxiv.org/abs/2102.07831. Based on the NeuralSort algorithm.
@@ -373,10 +377,13 @@ def neuralNDCG(y_pred, y_true, padded_value_indicator=-1, temperature=1., powere
 
     ground_truth = torch.matmul(P_hat, y_true_masked).squeeze(-1)
     discounts = (torch.tensor(1.) / torch.log2(torch.arange(y_true.shape[-1], dtype=torch.float) + 2.)).to(dev)
-    discounted_gains = ground_truth * discounts
+    if discount:
+        discounted_gains = ground_truth * discounts
+    else:
+        discounted_gains = ground_truth
 
     if powered_relevancies:
-        idcg = dcg(y_true, y_true, ats=[k]).permute(1, 0)
+        idcg = dcg(y_true, y_true, ats=[k]).permute(1, 0)  # Ideal DCG
     else:
         idcg = dcg(y_true, y_true, ats=[k], gain_function=lambda x: x).permute(1, 0)
 

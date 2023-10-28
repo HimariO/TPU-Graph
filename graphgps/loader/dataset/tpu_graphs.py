@@ -504,6 +504,14 @@ class TPUGraphsNpz(Dataset):
 
         if self.transform:
             data = self.transform(data)
+        
+        if cfg.train.regression.val_min >= 0:
+            data.y = data.y.float()
+            data.y -= cfg.train.regression.val_min
+            if cfg.train.regression.val_max > cfg.train.regression.val_min:
+                scope = cfg.train.regression.val_max - cfg.train.regression.val_min
+                data.y = (data.y / scope) * 100
+        
         return data
     
     def get_idx_split(self):
