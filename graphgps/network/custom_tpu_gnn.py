@@ -5,9 +5,34 @@ import torch_geometric.graphgym.register as register
 from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.models.gnn import FeatureEncoder, GNNPreMP
 from torch_geometric.graphgym.register import register_network
+from torch_geometric.utils import to_dense_batch
 
 from graphgps.layer.gatedgcn_layer import GatedGCNLayer
 from graphgps.layer.gine_conv_layer import GINEConvLayer
+from performer_pytorch import SelfAttention
+
+
+class PerformerWrapper(torch.nn.Module):
+
+    def __init__(self, conv_layer, dim_h, num_heads, dropout) -> None:
+        super().__init__()
+        self.conv_layer = conv_layer
+        self.attn = SelfAttention(
+            dim=dim_h, 
+            heads=num_heads,
+            dropout=dropout,
+            causal=False
+        )
+        self.norm2 = torch.nn.BatchNorm1d(dim_h)
+    
+    def forward(self, batch):
+        h = batch.x
+        batch = self.conv_layer(batch)
+        h_dense, mask = to_dense_batch(h, batch.batch)
+        h_attn = self.attn(h_dense, mask=mask)[mask]
+        batch.x = self.norm2(batch.x + h_attn + h)
+        return batch
+
 
 @register_network('custom_tpu_gnn')
 class CustomTpuGNN(torch.nn.Module):
@@ -29,12 +54,17 @@ class CustomTpuGNN(torch.nn.Module):
 
         assert cfg.gnn.dim_inner == dim_in, \
             "The inner and hidden dims must match."
-
-        conv_model = self.build_conv_model(cfg.gnn.layer_type)
+        
+        layer_type = cfg.gnn.layer_type.split('+')
+        conv_type = layer_type[0]
+        conv_model = self.build_conv_model(conv_type)
+        
         layers = []
         layer_cfg = new_layer_config(dim_in, dim_in, 1, has_act=True, has_bias=True, cfg=cfg)
         for _ in range(cfg.gnn.layers_mp):
             layers.append(conv_model(layer_cfg))
+            if len(layer_type) > 1 and layer_type[1] == 'performer':
+                layers[-1] = PerformerWrapper(layers[-1], dim_in, 4, 0.5)
         self.gnn_layers = torch.nn.Sequential(*layers)
 
         GNNHead = register.head_dict[cfg.gnn.head]
