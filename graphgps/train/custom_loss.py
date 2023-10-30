@@ -9,22 +9,22 @@ from graphgps.train.fast_soft_sort.pytorch_ops import soft_rank
 from loguru import logger
 
 
+def ranking(y: torch.Tensor):
+    assert y.ndim == 2, f"{y.ndim} != 2"
+    ord_idx = torch.sort(y, dim=-1).indices
+    rank = torch.arange(0, y.size(1)).to(y.device) # .repeat(y.size(0), 1)
+    new_y = torch.zeros_like(y, dtype=rank.dtype)
+    for i, order in enumerate(ord_idx):
+        new_y[i][order] = rank
+    return new_y
+
 
 def apply_rank_loss(y_pred, y_true, train=True):
-    
-    def ranking(y: torch.Tensor):
-        assert y.ndim == 2, f"{y.ndim} != 2"
-        ord_idx = torch.sort(y, dim=-1).indices
-        rank = torch.arange(0, y.size(1)).to(y.device) # .repeat(y.size(0), 1)
-        new_y = torch.zeros_like(y, dtype=rank.dtype)
-        for i, order in enumerate(ord_idx):
-            new_y[i][order] = rank
-        return new_y
-    
     kwargs = {
         "adaptive": cfg.train.adap_margin,
         "train": train,
-        "weight_by_diff": True,
+        "weight_by_diff": False,
+        "weight_by_diff_var": True,
     }
     
     if cfg.model.loss_fun == 'hinge':
@@ -32,7 +32,7 @@ def apply_rank_loss(y_pred, y_true, train=True):
     elif cfg.model.loss_fun == 'listmle':
         loss = listMLE(y_pred, y_true, **kwargs)
     elif cfg.model.loss_fun == 'ranknet':
-        loss = rankNet(y_pred, ranking(y_true).float(), **kwargs)
+        loss = rankNet(y_pred, y_true, **kwargs)
     elif cfg.model.loss_fun == 'approx_ndcg':
         loss = approxNDCGLoss(y_pred, ranking(y_true).float(), **kwargs)
     elif cfg.model.loss_fun == 'neural_ndcg':
@@ -72,10 +72,10 @@ def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False, **kwa
         fp_true = true.float()
         step = (fp_true.var(dim=1, keepdim=True)**0.5)
         step = torch.clip(step, min=1e-5)
-        step = step* 6 / 10
+        step = step * 6 / 10
         pairwise_scale = nn.functional.relu(true[:,i_idx] - true[:,j_idx]) * pairwise_true / step
         pairwise_scale = torch.clip(pairwise_scale, min=0, max=10)
-        margin = (pairwise_scale + 0) * base_margin
+        margin = (pairwise_scale + 1) * base_margin
     else:
         margin = base_margin
 
@@ -85,7 +85,9 @@ def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False, **kwa
     return loss
 
 
-def rankNet(y_pred, y_true, padded_value_indicator=-1, weight_by_diff=False, weight_by_diff_powed=False, **kwargs):
+def rankNet(
+        y_pred, y_true, padded_value_indicator=-1, 
+        weight_by_diff=False, weight_by_diff_powed=False, weight_by_diff_var=False, **kwargs):
     """
     RankNet loss introduced in "Learning to Rank using Gradient Descent".
     :param y_pred: predictions from the model, shape [batch_size, slate_length]
@@ -95,7 +97,8 @@ def rankNet(y_pred, y_true, padded_value_indicator=-1, weight_by_diff=False, wei
     :return: loss value, a torch.Tensor
     """
     y_pred = y_pred.clone()
-    y_true = y_true.clone()
+    y_true = y_true.clone().float()
+    y_rank = ranking(y_true).float()
 
     mask = y_true == padded_value_indicator
     y_pred[mask] = float('-inf')
@@ -105,27 +108,35 @@ def rankNet(y_pred, y_true, padded_value_indicator=-1, weight_by_diff=False, wei
     document_pairs_candidates = list(product(range(y_true.shape[1]), repeat=2))
 
     pairs_true = y_true[:, document_pairs_candidates]
+    pairs_rank = y_rank[:, document_pairs_candidates]
     selected_pred = y_pred[:, document_pairs_candidates]
 
     # here we calculate the relative true relevance of every candidate pair
     true_diffs = pairs_true[:, :, 0] - pairs_true[:, :, 1]
+    rank_diffs = pairs_rank[:, :, 0] - pairs_rank[:, :, 1]
     pred_diffs = selected_pred[:, :, 0] - selected_pred[:, :, 1]
 
     # here we filter just the pairs that are 'positive' and did not involve a padded instance
     # we can do that since in the candidate pairs we had symetric pairs so we can stick with
     # positive ones for a simpler loss function formulation
-    the_mask = (true_diffs > 0) & (~torch.isinf(true_diffs))
+    the_mask = (true_diffs > 1e-9) & (~torch.isinf(true_diffs))
 
     pred_diffs = pred_diffs[the_mask]
 
     weight = None
     if weight_by_diff:
-        abs_diff = torch.abs(true_diffs)
+        abs_diff = torch.abs(rank_diffs)
         weight = abs_diff[the_mask]
     elif weight_by_diff_powed:
-        true_pow_diffs = torch.pow(pairs_true[:, :, 0], 2) - torch.pow(pairs_true[:, :, 1], 2)
+        true_pow_diffs = torch.pow(pairs_rank[:, :, 0], 2) - torch.pow(pairs_rank[:, :, 1], 2)
         abs_diff = torch.abs(true_pow_diffs)
         weight = abs_diff[the_mask]
+    elif weight_by_diff_var:
+        fp_true = y_true.float()
+        step = (fp_true.var(dim=1, keepdim=True)**0.5)
+        step = torch.clip(step, min=1e-5)
+        step = step* 6 / 10
+        weight = torch.clip(torch.abs(true_diffs) / step, min=1, max=10)[the_mask]
 
     # here we 'binarize' true relevancy diffs since for a pairwise loss we just need to know
     # whether one document is better than the other and not about the actual difference in
@@ -528,14 +539,14 @@ def diffsort_loss(y_pred, y_true, train=True, **kwargs):
     _, perm_prediction = sorter(y_pred)
     
     # loss = torch.nn.BCELoss()(perm_prediction, perm_ground_truth)
-    # loss = nn.functional.cross_entropy(
-    #     torch.permute(perm_prediction, [0, 2, 1]), 
-    #     y_true,
-    #     reduction='sum',
-    # )
-    loss = nn.functional.binary_cross_entropy(
+    loss = nn.functional.cross_entropy(
         torch.permute(perm_prediction, [0, 2, 1]), 
-        perm_ground_truth,
+        y_true,
         reduction='sum',
     )
+    # loss = nn.functional.binary_cross_entropy(
+    #     torch.permute(perm_prediction, [0, 2, 1]), 
+    #     perm_ground_truth,
+    #     reduction='sum',
+    # )
     return loss

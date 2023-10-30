@@ -134,7 +134,7 @@ class BasicSampler:
     def resample(self, graph: Data, num_sample_configs: int):
         num_config = graph.num_config.item()
         all_zero = (graph.y < 1e-9).all()
-        if all_zero or random.random() < 0.5:  # runtime can't be sort
+        if all_zero:  # runtime can't be sort
             return torch.randint(0, num_config, (num_sample_configs,))
         
         randperm = torch.randperm(num_config)
@@ -150,7 +150,7 @@ class BasicSampler:
                 # NOTE: overwrite duplicated samples with same id, so at least the label will also be the same 
                 # if we will to find the alternative samples, and we can exclue the duplicans in loss func by looking at label.
                 sample_idx[i + 1:][mask] = sample_idx[i]
-            if resample_ptr >= num_config:
+            if resample_ptr + mask.sum() >= num_config:
                 break
             if mask.any():
                 sample_idx[i + 1:][mask] = randperm[resample_ptr: resample_ptr + mask.sum()]
