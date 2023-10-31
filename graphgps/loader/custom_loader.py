@@ -61,19 +61,22 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False, sa
     max_config_num = max(g.num_config.item() for g in batch_list)
     
     for g in batch_list:
+        padding_mask = torch.zeros([num_sample_configs], dtype=torch.bool)
         if train_graph_segment:
             if sampler is None:
                 sample_idx.append(
                     torch.randint(0, g.num_config.item(), (num_sample_configs,))
                 )
             else:
-                sample_idx.append(sampler.resample(g, num_sample_configs))
+                idx, padding_mask = sampler.resample(g, num_sample_configs)
+                sample_idx.append(idx)
         else:
             sample_idx.append(
                 # torch.arange(0, min(g.num_config.item(), num_sample_configs))
                 torch.arange(0, min(max_config_num, num_sample_configs)) % g.num_config.item()
             )
         g.y = g.y[sample_idx[-1]]
+        g.y[padding_mask] = -1  # NOTE: marker of padding for loss function to skip the duplicated/empty sample
         g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx[-1], ...]
         g.config_feats = g.config_feats.transpose(0,1)
         # NOTE: add padding to non-configable nodes

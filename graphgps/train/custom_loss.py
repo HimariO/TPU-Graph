@@ -3,7 +3,7 @@ from itertools import product
 import torch
 import numpy as np
 import diffsort
-from torch import nn
+from torch import nn, Tensor
 from torch_geometric.graphgym.config import cfg
 from graphgps.train.fast_soft_sort.pytorch_ops import soft_rank
 from loguru import logger
@@ -68,6 +68,7 @@ def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False, **kwa
     j_idx = torch.arange(num_preds).repeat_interleave(num_preds)
 
     pairwise_true = true[:,i_idx] - true[:,j_idx] > 1e-9
+    mask = torch.logical_and(true[:,i_idx] >= 0,  true[:,j_idx] >= 0)
     if adaptive:
         fp_true = true.float()
         step = (fp_true.var(dim=1, keepdim=True)**0.5)
@@ -80,7 +81,7 @@ def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False, **kwa
         margin = base_margin
 
     loss = nn.functional.relu(margin - (pred[:,i_idx] - pred[:,j_idx]))
-    loss = loss * pairwise_true.float()
+    loss = loss * pairwise_true.float() * mask.float()
     loss = torch.sum(loss) / batch_size
     return loss
 

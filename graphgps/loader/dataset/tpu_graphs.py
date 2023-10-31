@@ -131,11 +131,12 @@ class BasicSampler:
     random sample configs and (try to )remove duplication
     """
 
-    def resample(self, graph: Data, num_sample_configs: int):
+    def resample(self, graph: Data, num_sample_configs: int) -> Tuple[Tensor]:
         num_config = graph.num_config.item()
         all_zero = (graph.y < 1e-9).all()
+        pad_mask = torch.zeros([num_sample_configs], dtype=torch.bool)
         if all_zero:  # runtime can't be sort
-            return torch.randint(0, num_config, (num_sample_configs,))
+            return torch.randint(0, num_config, (num_sample_configs,)), pad_mask
         
         randperm = torch.randperm(num_config)
         sample_idx = randperm[:num_sample_configs]
@@ -148,23 +149,26 @@ class BasicSampler:
             mask = delta < 1e-6
             if mask.any():
                 # NOTE: overwrite duplicated samples with same id, so at least the label will also be the same 
-                # if we will to find the alternative samples, and we can exclue the duplicans in loss func by looking at label.
+                # if we cant find the alternative samples, and we can exclue the duplicans in loss func by looking at label.
                 sample_idx[i + 1:][mask] = sample_idx[i]
+                pad_mask[i + 1:][mask] = True
             if resample_ptr + mask.sum() >= num_config:
                 break
             if mask.any():
                 sample_idx[i + 1:][mask] = randperm[resample_ptr: resample_ptr + mask.sum()]
+                pad_mask[i + 1:][mask] = False
                 resample_ptr += mask.sum()
         
         if len(sample_idx) < num_sample_configs:
-            mis = num_sample_configs - len(sample_idx)
-            pad = torch.zeros([mis], dtype=sample_idx.dtype, device=sample_idx.device) + sample_idx[0]
+            miss = num_sample_configs - len(sample_idx)
+            pad = torch.zeros([miss], dtype=sample_idx.dtype, device=sample_idx.device) + self.PAD
             sample_idx = torch.cat([sample_idx, pad], dim=0)
+            pad_mask[-miss:] = True
         
-        return sample_idx
+        return sample_idx, pad_mask
 
 
-class IntervalSampler:
+class IntervalSampler(BasicSampler):
     """
     Each graph can have upto tens thoughs of config, and each config will have one runtime as the groundtruth ref of the model.
     All the runtimes from a single graph can cover a large ranges, ex: a graph can have 4e7 ~ 1e9 ms runtime according to different config,
@@ -177,10 +181,11 @@ class IntervalSampler:
         self.lifetimes = defaultdict(lambda: 0)
         self.intervals = {}
     
-    def resample(self, graph: Data, num_sample_configs: int):
+    def resample(self, graph: Data, num_sample_configs: int) -> Tuple[Tensor]:
         all_zero = (graph.y < 1e-9).all()
-        if all_zero or random.random() < 0.5:  # runtime can't be sort
-            return torch.randint(0, graph.num_config.item(), (num_sample_configs,))
+        pad_mask = torch.zeros([num_sample_configs], dtype=torch.bool)
+        if all_zero or random.random() < 0.66:  # runtime can't be sort
+            return super().resample(graph, num_sample_configs)
         
         ind = f"{graph.graph_name}_{graph.source_dataset}"
         if self.lifetimes[ind] <= 0:
@@ -204,20 +209,21 @@ class IntervalSampler:
             delta = torch.abs(sample_cfg[i + 1:] - cfeat).sum(axis=-1).sum(axis=-1)
             mask = delta < 1e-6
             if mask.any():
-                # NOTE: overwrite duplicated samples with same id, so at least the label will also be the same 
-                # if we will to find the alternative samples, and we can exclue the duplicans in loss func by looking at label.
                 sample_idx[i + 1:][mask] = sample_idx[i]
+                pad_mask[i + 1:][mask] = True
             if resample_ptr >= len(self.intervals[ind]):
                 break
             if mask.any():
                 sample_idx[i + 1:][mask] = self.intervals[ind][resample_ptr: resample_ptr + mask.sum()]
+                pad_mask[i + 1:][mask] = False
                 resample_ptr += mask.sum()
         
         if len(sample_idx) < num_sample_configs:
             mis = num_sample_configs - len(sample_idx)
             pad = torch.zeros([mis], dtype=sample_idx.dtype, device=sample_idx.device) + sample_idx[0]
             sample_idx = torch.cat([sample_idx, pad], dim=0)
-        return sample_idx
+            pad_mask[-mis:] = True
+        return sample_idx, pad_mask
 
 
 class KeepKHop:
