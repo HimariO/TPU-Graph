@@ -34,7 +34,7 @@ train:
   ckpt_period: 100
   sampler: full_batch
   auto_resume: true
-  adap_margin: true
+  adap_margin: false
 model:
   type: custom_tpu_gnn
   loss_fun: cross_entropy
@@ -64,3 +64,4 @@ share:
   dim_in: 286
 device: cuda
 # model_ckpt: tests/nlp-random-fullenc-ft/tpu-pe-fullenc/0/best-447.ckpt
+seed: 5

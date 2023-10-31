@@ -161,7 +161,7 @@ class BasicSampler:
         
         if len(sample_idx) < num_sample_configs:
             miss = num_sample_configs - len(sample_idx)
-            pad = torch.zeros([miss], dtype=sample_idx.dtype, device=sample_idx.device) + self.PAD
+            pad = torch.zeros([miss], dtype=sample_idx.dtype, device=sample_idx.device) + sample_idx[0]
             sample_idx = torch.cat([sample_idx, pad], dim=0)
             pad_mask[-miss:] = True
         
