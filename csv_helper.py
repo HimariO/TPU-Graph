@@ -370,6 +370,28 @@ def overwrite(csv_a, csv_b, out_path):
     a_df.to_csv(out_path, index=False)
 
 
+"""
+python3 csv_helper.py merge_csv \
+tests/xla-tile-pe/tpu-tiles-pe/submission_20231009_1696856596.csv \
+tests/results/tpu-pe-fullenc/submission_2023930_1696023638.csv \ 
+tests/xla-default-sage-fullenc-khop-extra/tpu-khop-extra/test_20231018_1697559303.csv \
+tests/nlp-random-fullenc-ft/tpu-pe-fullenc/submission_20231001_1696152186.csv \
+tests/nlp-default-sage-fullenc-khop-extra/nlp-tpu-khop-extra/test_20231022_1697989360.csv \
+~/Downloads/tpu-graph-files/merge_20231029.csv
+"""
+def merge_csv(xla_tile, xla_rand, xla_def, nlp_rand, nlp_def, out):
+    csvs = [xla_tile, xla_rand, xla_def, nlp_rand, nlp_def]
+    dfs = []
+    for f in csvs:
+        dfs.append(pd.read_csv(f))
+    merged_df = pd.concat(dfs, ignore_index=True)
+    print(merged_df)
+    
+    if merged_df['ID'].duplicated().any():
+        raise ValueError("Duplicated values detected in 'ID' column!")
+    merged_df.to_csv(out, index=False)
+
+
 def rankaggr_lp(ranks):
 
     def _build_graph(ranks: np.ndarray):
@@ -452,7 +474,7 @@ def ensemble_csv(csvs: List[str], out_path: str):
         score_mtx = np.asarray(score_mtx)
         # merge_score = ranky.pairwise(score_mtx.T)
         # merge_score = ranky.kemeny_young(score_mtx.T, workers=16)
-        rankaggr_lp(score_mtx)
+        # rankaggr_lp(score_mtx)
         merge_score = score_mtx.mean(axis=0)
         new_rank = sorted([(score, i) for i, score in enumerate(merge_score)])
         return ';'.join(str(r[1]) for r in new_rank)
@@ -490,6 +512,9 @@ def ensemble_raw(pt_files: List[str], out_path: str):
     id2scores = defaultdict(list)
     for file in pt_files:
         ranks: Dict[str, List] = torch.load(file)
+        if isinstance(ranks, dict) and 'rankings' in ranks:
+            ranks = ranks['rankings']
+        
         for graph_id, predicts in ranks.items():
             score_vec = [0] * len(predicts)
             for runtime, item_id in predicts:
@@ -498,14 +523,16 @@ def ensemble_raw(pt_files: List[str], out_path: str):
     
     def merge(score_mtx: List[List[float]]) -> str:
         score_mtx = np.asarray(score_mtx)
-        score_mtx -= np.min(score_mtx, axis=1, keepdims=True)
-        score_mtx /= np.max(score_mtx, axis=1, keepdims=True)
-        # merge_score = ranky.pairwise(score_mtx.T)
+        vmin = np.min(score_mtx, axis=1, keepdims=True)
+        vmax = np.max(score_mtx, axis=1, keepdims=True)
+        score_mtx -= vmin
+        score_mtx /= vmax - vmin
+        merge_score = ranky.pairwise(score_mtx.T)
         # merge_score = ranky.kemeny_young(score_mtx.T, workers=16)
-        merge_score = score_mtx.mean(axis=0)
-        print('-' * 100)
-        print(score_mtx)
-        print(merge_score)
+        # merge_score = score_mtx.mean(axis=0)
+        # print('-' * 100)
+        # print(score_mtx)
+        # print(merge_score)
         new_rank = sorted([(score, i) for i, score in enumerate(merge_score)])
         return ';'.join(str(r[1]) for r in new_rank)
     
@@ -654,6 +681,7 @@ def inpsect_dataset(root_dir, field='runtime'):
 if __name__ == '__main__':
     fire.Fire({
         overwrite.__name__: overwrite,
+        merge_csv.__name__: merge_csv,
         strip_table.__name__: strip_table,
         int8_config_feat.__name__: int8_config_feat,
         draw_graph.__name__: draw_graph,

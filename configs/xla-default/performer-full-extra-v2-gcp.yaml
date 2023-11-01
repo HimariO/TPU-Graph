@@ -1,0 +1,69 @@
+out_dir: tests/xla-default-fullgraph-performer
+num_workers: 1
+num_threads: 16
+debug: false
+wandb:
+  use: true
+  entity: togglec
+  project: tpu-graph-v2
+dataset:
+  name: TPUGraphsNpz
+  format: PyG-TPUGraphsNpz
+  task: graph
+  task_type: ranking
+  transductive: False
+  dir: /home/ron_zhu/TPU-Graph/datasets/
+  source: xla
+  search: default
+  num_sample_config: 24
+  eval_num_sample_config: 96
+  input_feat_key: op_feat_enc_i
+  cache_in_memory: true
+  khop:
+    use: true
+    hops: 2
+    bidirect: true
+  # config_sampler: IntervalSampler
+  extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
+  extra_cfg_feat_dims: 316
+
+train:
+  mode: custom_tpu
+  batch_size: 1
+  eval_period: 32
+  ckpt_period: 100
+  sampler: full_batch
+  auto_resume: true
+  adap_margin: false
+  gst:
+    sample_full_graph: true
+model:
+  type: custom_tpu_gnn
+  loss_fun: hinge
+  edge_decoding: dot
+  graph_pooling: add
+gnn:
+  layers_pre_mp: 1
+  layers_mp: 3
+  layers_post_mp: 2
+  dim_inner: 256
+  layer_type: sageconv+performer
+  stage_type: skipsum
+  batchnorm: False
+  act: prelu
+  dropout: 0.1
+  agg: mean
+  normalize_adj: False
+  enc_config: true
+  freeze_body: false
+  dim_feat_enc: 192
+optim:
+  optimizer: adam
+  base_lr: 0.0001
+  max_epoch: 1500
+  batch_accumulation: 4
+share:
+  dim_in: 286
+device: cuda
+seed: 4638
+# model_ckpt: tests/xla-default-fullgraph-khop-extra-v2/tpu-full-extra-v2-gcp/736/599.ckpt
