@@ -44,11 +44,11 @@ train:
     weight: 1.0
 model:
   type: custom_tpu_gnn
-  loss_fun: ranknet
+  loss_fun: diffsort
   edge_decoding: dot
   graph_pooling: add
 gnn:
-  layers_pre_mp: 2
+  layers_pre_mp: 1
   layers_mp: 3
   layers_post_mp: 2
   dim_inner: 256
@@ -65,9 +65,10 @@ gnn:
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 2000
+  max_epoch: 1500
   batch_accumulation: 1
 share:
   dim_in: 286
 device: cuda
-# model_ckpt: tests/nlp-random-fullenc-ft/tpu-pe-fullenc/0/best-447.ckpt
+seed: 0
+# model_ckpt: tests/xla-random-sage-fullenc-khop-extra-v2/tpu-khop-extra-v2-gcp/0/best-127.ckpt
