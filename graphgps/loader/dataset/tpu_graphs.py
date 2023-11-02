@@ -211,7 +211,7 @@ class IntervalSampler(BasicSampler):
             if mask.any():
                 sample_idx[i + 1:][mask] = sample_idx[i]
                 pad_mask[i + 1:][mask] = True
-            if resample_ptr >= len(self.intervals[ind]):
+            if resample_ptr + mask.sum() >= len(self.intervals[ind]):
                 break
             if mask.any():
                 sample_idx[i + 1:][mask] = self.intervals[ind][resample_ptr: resample_ptr + mask.sum()]

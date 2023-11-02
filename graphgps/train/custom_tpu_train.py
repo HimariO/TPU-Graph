@@ -28,6 +28,7 @@ from graphgps.utils import cfg_to_dict, flatten_dict, make_wandb_name
 from graphgps.history import History
 from graphgps.train.gst_utils import (
     batch_sample_graph_segs,
+    batch_sample_full,
     cached_node_embed,
     TPUModel,
     CheckpointWrapper,
@@ -180,7 +181,10 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
         batch.split = split
         true = batch.y
         batch_list = batch.to_data_list()
-        sampling = batch_sample_graph_segs(batch, all_segment=True, train=False)
+        if cfg.train.gst.sample_full_graph:
+            sampling = batch_sample_full(batch, train=False)
+        else:
+            sampling = batch_sample_graph_segs(batch, all_segment=True, train=False)
         batch_seg = sampling[2]
         batch_num_parts = sampling[3]
 
@@ -209,13 +213,19 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
         ]).to(
             torch.device(cfg.device)
         )
+        
         part_cnt = 0
-        for i, num_parts in enumerate(batch_num_parts):
-            for _ in range(num_parts):
-                for j in range(len(sampled_idx[i])):
-                    pred[i, j, :] += res[part_cnt, :]
-                    part_cnt += 1
-        assert part_cnt == len(res), f"Not coumsuming all {len(res)} from {res.shape} result Tensor!"
+        if not cfg.train.pair_rank:
+            for i, num_parts in enumerate(batch_num_parts):
+                for _ in range(num_parts):
+                    for j in range(len(sampled_idx[i])):
+                        pred[i, j, :] += res[part_cnt, :]
+                        part_cnt += 1
+            assert part_cnt == len(res), f"Not coumsuming all {len(res)} from {res.shape} result Tensor!"
+        else:
+            assert cfg.train.gst.sample_full_graph  # TODO: support pair ranking with GST?
+            raise NotImplementedError("")
+
 
         if cfg.train.gst.graph_embed_dims > 1:
             # HACK: quick implemntation to support 2D embedding table inferece.
