@@ -47,7 +47,12 @@ from torch_geometric.graphgym.loader import (
 from torch_geometric.data import Batch, Data
 from torch_sparse import SparseTensor
 from graphgps.loader.dataset.tpu_graphs import IntervalSampler, BasicSampler
-from graphgps.train.gst_utils import batch_sample_graph_segs, batch_sample_full
+from graphgps.train.gst_utils import (
+    batch_sample_graph_segs, 
+    batch_sample_full,
+    select_graph_config,
+    form_config_pair
+)
 
 index2mask = index_to_mask  # TODO Backward compatibility
 
@@ -75,41 +80,12 @@ def preprocess_batch(batch, num_sample_configs=32, train_graph_segment=False, sa
                 # torch.arange(0, min(g.num_config.item(), num_sample_configs))
                 torch.arange(0, min(max_config_num, num_sample_configs)) % g.num_config.item()
             )
-        g.y = g.y[sample_idx[-1]]
-        if train_graph_segment:
-            g.y[padding_mask] = -1  # NOTE: marker of padding for loss function to skip the duplicated/empty sample
-        g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx[-1], ...]
-        g.config_feats = g.config_feats.transpose(0,1)
-        # NOTE: add padding to non-configable nodes
-        g.config_feats_full = torch.zeros(
-            [
-                g.num_nodes,
-                len(sample_idx[-1]),
-                g.config_feats.shape[-1]
-            ], 
-            device=g.config_feats.device
-        )
-        g.config_feats_full -= 1
-        g.config_feats_full[g.config_idx, ...] = g.config_feats
-
-        for feat_key in cfg.dataset.extra_cfg_feat_keys:
-            extra_feat = getattr(g, feat_key).float()
-            extra_feat = extra_feat[sample_idx[-1], ...].transpose(0, 1)
-            full_feat = torch.zeros(
-                [
-                    g.num_nodes,
-                    len(sample_idx[-1]),
-                    extra_feat.shape[-1]
-                ], 
-                device=extra_feat.device
-            )
-            full_feat -= 1
-            full_feat[g.config_idx, ...] = extra_feat
-            setattr(g, feat_key, full_feat)
         
-        g.adj = SparseTensor(row=g.edge_index[0], col=g.edge_index[1], sparse_sizes=(g.num_nodes, g.num_nodes))
+        g = select_graph_config(g, sample_idx, padding_mask, train_graph_segment)
+        if cfg.train.pair_rank:
+            g = form_config_pair(g, train=train_graph_segment)
         processed_batch_list.append(g)
-    # breakpoint()
+
     processed_batch_list = Batch.from_data_list(processed_batch_list)
     if train_graph_segment:
         if full_graph:
@@ -151,7 +127,6 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
                 full_graph=cfg.train.gst.sample_full_graph,
             ) 
         )
-        
         
         loader_train = DataLoader(dataset, batch_size=batch_size,
                                   shuffle=shuffle, 

@@ -67,7 +67,7 @@ class CustomLogger(Logger):
         pred_score = torch.cat(self._pred)
         pred_int = self._get_pred_int(pred_score)
 
-        if true.shape[0] < 1e7:  # AUROC computation for very large datasets is too slow.
+        if true.shape[0] < 1e7 and False:  # AUROC computation for very large datasets is too slow.
             # TorchMetrics AUROC on GPU if available.
             auroc_score = auroc(pred_score.to(torch.device(cfg.device)),
                                 true.to(torch.device(cfg.device)),
@@ -88,8 +88,8 @@ class CustomLogger(Logger):
             'accuracy': reformat(accuracy_score(true, pred_int)),
             'precision': reformat(precision_score(true, pred_int)),
             'recall': reformat(recall_score(true, pred_int)),
-            'f1': reformat(f1_score(true, pred_int)),
-            'auc': reformat(auroc_score),
+            # 'f1': reformat(f1_score(true, pred_int)),
+            # 'auc': reformat(auroc_score),
         }
         if cfg.metric_best == 'accuracy-SBM':
             res['accuracy-SBM'] = reformat(accuracy_SBM(true, pred_int))
@@ -190,16 +190,23 @@ class CustomLogger(Logger):
         for true, pred in zip(self._true, self._pred):
             true = true.numpy()
             pred = pred.numpy()
-            for i in range(true.shape[0]):
-                opas.append(eval_opa(true[i], pred[i]))
-                corrs.append(eval_spearmanr(true[i], pred[i])['spearmanr'])
-                mses.append(((pred[i] - true[i])**2).mean())
-        return {
-            'opa': reformat(np.mean(opas)),
-            'spearmanr': reformat(np.mean(corrs)),
-            'mse': reformat(np.mean(mses)),
-        }
-
+            if true.ndim == 2:
+                for i in range(true.shape[0]):
+                    opas.append(eval_opa(true[i], pred[i]))
+                    corrs.append(eval_spearmanr(true[i], pred[i])['spearmanr'])
+                    mses.append(((pred[i] - true[i])**2).mean())
+            elif true.ndim == 1:  # raw pair-ranking result(classification)
+                pass
+        
+        if opas or corrs:
+            return {
+                'opa': reformat(np.mean(opas)),
+                'spearmanr': reformat(np.mean(corrs)),
+                'mse': reformat(np.mean(mses)),
+            }
+        else:
+            return self.classification_binary()
+    
     def regression(self):
         true, pred = torch.cat(self._true), torch.cat(self._pred)
         reformat = lambda x: round(float(x), cfg.round)
@@ -233,7 +240,7 @@ class CustomLogger(Logger):
             pred = seq_pred
             true = seq_ref
         else:
-            assert true.shape[0] == pred.shape[0]
+            assert true.shape[0] == pred.shape[0], f"{true.shape[0]} != {pred.shape[0]}"
             batch_size = true.shape[0]
         self._iter += 1
         self._true.append(true)

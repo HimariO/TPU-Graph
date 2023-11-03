@@ -33,7 +33,11 @@ from graphgps.train.gst_utils import (
     TPUModel,
     CheckpointWrapper,
 )
-from graphgps.train.custom_loss import apply_rank_loss, apply_regression_loss
+from graphgps.train.custom_loss import (
+    apply_rank_loss, 
+    apply_regression_loss,
+    apply_pair_rank_loss,
+)
 
 
 @ulogger.catch(reraise=True)
@@ -66,7 +70,10 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
                 batch, sampled_idx, emb_table, 
                 num_sample_config=num_sample_config
             )
-            batch_other = cached_node_embed(batch_list, sampled_idx, segments_to_train, emb_table)
+            if cfg.train.gst.sample_full_graph:
+                batch_other = []
+            else:
+                batch_other = cached_node_embed(batch_list, sampled_idx, segments_to_train, emb_table)
         else:
             (   
                 batch_obj,
@@ -78,7 +85,10 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
             
             batch_obj.to(torch.device(cfg.device))
             true = batch_obj.y
-            batch_other = cached_node_embed(batch_list, sampled_idx, segments_to_train, emb_table)
+            if cfg.train.gst.sample_full_graph:
+                batch_other = []
+            else:
+                batch_other = cached_node_embed(batch_list, sampled_idx, segments_to_train, emb_table)
         
         if cfg.debug: print(f"@ iter-{iter} graph: ", set([b.graph_name for b in batch_train_list]))
         td0 = time.time() - t0
@@ -100,22 +110,33 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
         td1 = time.time() - t1
         t2 = time.time()
 
-        pred = model.join_segments(graph_embed, batch_other, batch_num_parts)
+        if cfg.train.gst.sample_full_graph:
+            pred = graph_embed
+        else:
+            pred = model.join_segments(graph_embed, batch_other, batch_num_parts)
         
         """
         Compute loss
         """
         if 'TPUGraphs' in cfg.dataset.name:
-            pred = pred.view(-1, num_sample_config)
-            true = true.view(-1, num_sample_config)
-            loss = apply_rank_loss(pred, true, train=True)
-            if cfg.train.regression.use:
-                loss += apply_regression_loss(pred, true, model) * cfg.train.regression.weight
-                _pred = pred * model.reg_scale + model.reg_offset
-                _pred = _pred.detach().to('cpu', non_blocking=True)
-            else:
+            
+            if cfg.train.pair_rank:
+                _true = true.detach().to('cpu', non_blocking=True)  # (batch * num_sample_config,)
+                # pair_true = batch_obj.pair_y
+                loss = apply_pair_rank_loss(pred, true, train=True)
                 _pred = pred.detach().to('cpu', non_blocking=True)
-            _true = true.detach().to('cpu', non_blocking=True)
+            else:
+                true = true.view(-1, num_sample_config)
+                _true = true.detach().to('cpu', non_blocking=True)
+                pred = pred.view(-1, num_sample_config)
+                loss = apply_rank_loss(pred, true, train=True)
+                
+                if cfg.train.regression.use:
+                    loss += apply_regression_loss(pred, true, model) * cfg.train.regression.weight
+                    _pred = pred * model.reg_scale + model.reg_offset
+                    _pred = _pred.detach().to('cpu', non_blocking=True)
+                else:
+                    _pred = pred.detach().to('cpu', non_blocking=True)
         else:
             loss, pred_score = compute_loss(pred, true)
             _true = true.detach().to('cpu', non_blocking=True)
@@ -135,15 +156,16 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
             optimizer.step()
             optimizer.zero_grad()
         
-        for i in range(graph_embed.shape[0]):
-            b = i // num_sample_config  # batch index
-            src_graph = batch_list[b]
-            model.update_emb_table(
-                graph_embed[i], 
-                src_graph, 
-                sampled_idx[b][i % num_sample_config],
-                segments_to_train[b],
-            )
+        if not cfg.train.gst.sample_full_graph:
+            for i in range(graph_embed.shape[0]):
+                b = i // num_sample_config  # batch index
+                src_graph = batch_list[b]
+                model.update_emb_table(
+                    graph_embed[i], 
+                    src_graph, 
+                    sampled_idx[b][i % num_sample_config],
+                    segments_to_train[b],
+                )
         
         logger.update_stats(true=_true,
                             pred=_pred,
@@ -178,13 +200,19 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
         """
         batch_num_sample = len(sampled_idx[0])
         
+        if cfg.train.pair_rank:
+            true = batch.y_rank  # HACK: runtime order is moved to another attirbute with pair ranking
+        else:
+            true = batch.y
+        
         batch.split = split
-        true = batch.y
         batch_list = batch.to_data_list()
+        
         if cfg.train.gst.sample_full_graph:
             sampling = batch_sample_full(batch, train=False)
         else:
             sampling = batch_sample_graph_segs(batch, all_segment=True, train=False)
+        batch_obj = sampling[0]
         batch_seg = sampling[2]
         batch_num_parts = sampling[3]
 
@@ -204,18 +232,19 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 partial_inference(batch_seg[i: i + batch_graphs])
             )
         res = torch.cat(res, dim=0)
-        
         true = true.to(torch.device(cfg.device))
-        pred = torch.zeros([
-            len(batch_list), 
-            batch_num_sample, 
-            cfg.train.gst.graph_embed_size,
-        ]).to(
-            torch.device(cfg.device)
-        )
         
         part_cnt = 0
         if not cfg.train.pair_rank:
+            pred = torch.zeros(
+                [
+                    len(batch_list), 
+                    batch_num_sample, 
+                    cfg.train.gst.graph_embed_size,
+                ], 
+                device=torch.device(cfg.device)
+            )
+            
             for i, num_parts in enumerate(batch_num_parts):
                 for _ in range(num_parts):
                     for j in range(len(sampled_idx[i])):
@@ -224,7 +253,25 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
             assert part_cnt == len(res), f"Not coumsuming all {len(res)} from {res.shape} result Tensor!"
         else:
             assert cfg.train.gst.sample_full_graph  # TODO: support pair ranking with GST?
-            raise NotImplementedError("")
+            pred = torch.zeros(
+                [
+                    len(batch_list), 
+                    batch_num_sample, 
+                    1,
+                ], 
+                device=torch.device(cfg.device)
+            )
+            batch_list = batch_obj.to_data_list()
+            for i, num_parts in enumerate(batch_num_parts):
+                num_cfg = len(sampled_idx[i])
+                pairs = num_cfg * (num_cfg - 1) // 2  # sum(1 ... num_cfg - 1)
+                _, log_probs = model.perum_matrix(
+                    batch_list[i],
+                    res[part_cnt: part_cnt + pairs],
+                    num_cfg,
+                )
+                pred[i, :, 0] = log_probs
+                part_cnt += pairs
 
 
         if cfg.train.gst.graph_embed_dims > 1:

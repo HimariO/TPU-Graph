@@ -145,7 +145,7 @@ if __name__ == '__main__':
                      f"split_index={cfg.dataset.split_index}")
         logging.info(f"    Starting now: {datetime.datetime.now()}")
         # Set machine learning pipeline
-        model = create_model() # Standard GCN/SAGE
+        model = create_model(dim_out=cfg.gnn.dim_out) # Standard GCN/SAGE
         model = TPUModel(
             model, 
             enc_config=cfg.gnn.enc_config,
@@ -156,6 +156,7 @@ if __name__ == '__main__':
             graph_embed_dims=cfg.train.gst.graph_embed_dims,
             graph_embed_size=cfg.train.gst.graph_embed_size,
             regression=cfg.train.regression.use,
+            pair_rank=cfg.train.pair_rank,
         ) # Parameters associated with the TPU dataset before feeding into GCN/SAGE
         
         if cfg.train.mode == 'inference-tpu':  # Include all configs in test time.

@@ -59,6 +59,15 @@ def apply_regression_loss(y_pred, y_true, model):
     return nn.functional.mse_loss(pred, y_true)
 
 
+def apply_pair_rank_loss(y_pred, y_true, train=True):
+    if y_true.ndim == 2:
+        y_true = y_true.squeeze(0)
+    mask = (y_true >= 0).float()
+    loss = nn.functional.cross_entropy(y_pred, y_true, reduction='none')
+    loss *= mask
+    return loss.mean()
+
+
 def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False, **kwargs):
     # pred: (batch_size, num_preds )
     # true: (batch_size, num_preds)

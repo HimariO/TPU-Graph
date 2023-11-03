@@ -50,6 +50,8 @@ def extended_cfg(cfg):
     cfg.train.gst.graph_embed_size = 1
     cfg.train.gst.sample_full_graph = False
 
+    cfg.train.pair_rank = False
+
     cfg.dataset.source = 'nlp'
     cfg.dataset.search = 'random'
     cfg.dataset.tpu_task = 'layout'

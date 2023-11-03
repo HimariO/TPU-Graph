@@ -108,7 +108,7 @@ def batch_sample_graph_segs(batch: Union[Batch, List[Data]], num_sample_config=3
     )
 
 
-def batch_sample_full(batch: Union[Batch, List[Data]], num_sample_config=32, train=True, all_segment=False):
+def batch_sample_full(batch: Union[Batch, List[Data]], num_sample_config=32, train=True):
     # HACK: doing the reduant `to_data_list` here so every tensor in Data will be at least 1D
     batch_list = batch.to_data_list() if isinstance(batch, Batch) else batch
     batch_num_parts = []
@@ -136,7 +136,7 @@ def batch_sample_full(batch: Union[Batch, List[Data]], num_sample_config=32, tra
             )
 
             for key in data.keys:
-                if key not in unfold_g.keys:
+                if key not in unfold_g.keys and key not in ['y', 'y_rank', 'config_feats_full']:
                     setattr(unfold_g, key, getattr(data, key))
             for feat_key in cfg.dataset.extra_cfg_feat_keys:
                 sampled = getattr(data, feat_key)[:, k, :]
@@ -150,6 +150,83 @@ def batch_sample_full(batch: Union[Batch, List[Data]], num_sample_config=32, tra
         batch_num_parts,
         segments_to_train,
     )
+
+
+def select_graph_config(g: Data, sample_idx: Tensor, padding_mask: Tensor, train: bool) -> Data:
+    g.y = g.y[sample_idx[-1]]
+    if train:
+        g.y[padding_mask] = -1  # NOTE: marker of padding for loss function to skip the duplicated/empty sample
+    
+    g.config_feats = g.config_feats.view(g.num_config, g.num_config_idx, -1)[sample_idx[-1], ...]
+    g.config_feats = g.config_feats.transpose(0,1)
+    # NOTE: add padding to non-configable nodes, config_feats_full will overwrite config_feats after batch_sample_*()
+    g.config_feats_full = torch.zeros(
+        [
+            g.num_nodes,
+            len(sample_idx[-1]),
+            g.config_feats.shape[-1]
+        ], 
+        device=g.config_feats.device
+    )
+    g.config_feats_full -= 1
+    g.config_feats_full[g.config_idx, ...] = g.config_feats
+
+    for feat_key in cfg.dataset.extra_cfg_feat_keys:
+        extra_feat = getattr(g, feat_key).float()
+        extra_feat = extra_feat[sample_idx[-1], ...].transpose(0, 1)
+        full_feat = torch.zeros(
+            [
+                g.num_nodes,
+                len(sample_idx[-1]),
+                extra_feat.shape[-1]
+            ], 
+            device=extra_feat.device
+        )
+        full_feat -= 1
+        full_feat[g.config_idx, ...] = extra_feat
+        setattr(g, feat_key, full_feat)
+    
+    g.adj = SparseTensor(row=g.edge_index[0], col=g.edge_index[1], sparse_sizes=(g.num_nodes, g.num_nodes))
+    return g
+
+
+def form_config_pair(graph: Data, train=False) -> Data:
+    num_config = graph.config_feats.shape[1]
+    if train:
+        assert num_config % 2 == 0
+        # rand_idx = torch.randperm(num_config)
+        rand_idx = torch.arange(num_config)
+        pair_first = rand_idx[:num_config // 2]
+        pair_second = rand_idx[num_config // 2:]
+    else:
+        pair_first = torch.arange(num_config).repeat_interleave(num_config)
+        pair_second = torch.arange(num_config).repeat(num_config)
+        diag_mask = pair_second > pair_first
+        pair_first = pair_first[diag_mask]
+        pair_second = pair_second[diag_mask]
+    
+    feat_first  = graph.config_feats_full[:, pair_first, :]
+    feat_second = graph.config_feats_full[:, pair_second, :]
+    graph.config_feats_full = torch.cat([feat_first, feat_second], dim=-1)
+
+    for feat_key in cfg.dataset.extra_cfg_feat_keys:
+        extra_feat = getattr(graph, feat_key)
+        extra_first  = extra_feat[:, pair_first, :]
+        extra_second = extra_feat[:, pair_second, :]
+        pair_extra = torch.cat([extra_first, extra_second], dim=-1)
+        setattr(graph, feat_key, pair_extra)
+    
+    y_first = graph.y[pair_first]
+    y_second = graph.y[pair_second]
+    
+    graph.y_rank = graph.y  # HACK: make a copy elsewhere for comcompute OPA, graph.y is used for cross-entropy
+    graph.y = (y_first > y_second).long()
+    graph.y[y_first == -1] = -1
+    graph.y[y_second == -1] = -1
+    graph.y[y_first == y_second] = -1
+    graph.pair_id = torch.stack([pair_first, pair_second], dim=0)
+
+    return graph
 
 
 def cached_node_embed(
@@ -200,6 +277,7 @@ class TPUModel(torch.nn.Module):
             graph_embed_dims=1,
             graph_embed_size=1,
             regression=False,
+            pair_rank=False,
         ):
         super().__init__()
         self.model = model
@@ -218,9 +296,10 @@ class TPUModel(torch.nn.Module):
         else:
             self.history = History(14_000_000, graph_embed_size)
         
+        m = 2 if pair_rank else 1
         if enc_config:
             self.config_map = nn.Sequential(
-                nn.Linear(180, 32, bias=True),
+                nn.Linear(180 * m, 32, bias=True),
                 nn.BatchNorm1d(32),
             )
         if enc_tile_config:
@@ -232,7 +311,7 @@ class TPUModel(torch.nn.Module):
         self.extra_cfg_feat_keys = extra_cfg_feat_keys
         if self.extra_cfg_feat_keys:
             self.extra_map = nn.Sequential(
-                nn.Linear(extra_cfg_feat_dims, 128),
+                nn.Linear(extra_cfg_feat_dims * m, 128),
                 nn.ReLU(),
                 nn.BatchNorm1d(128),
                 nn.Linear(128, 32),
@@ -259,6 +338,10 @@ class TPUModel(torch.nn.Module):
     def gather_input_feat(self, batch: Batch) -> Batch:
         batch.split = 'train'
         if self.enc_config:
+            """
+            batch.config_feats: (nodes * configs, 18)
+            config_feats: (nodes * configs, 180)
+            """
             config_feats = self.fourier_enc(batch.config_feats, scales=[-1, 0, 1, 2, 3])
             config_feats = self.config_map(config_feats)
         elif self.enc_tile_config:
@@ -404,6 +487,22 @@ class TPUModel(torch.nn.Module):
             # ema = self.history.pull(flat_ind)
             # ema = ema * ((num_segment - 1) / num_segment) + emb * (1 / num_segment)
             self.history.push(emb, flat_ind)
+    
+    def perum_matrix(self, graph: Data, predicts: Tensor, num_cfg: int) -> Tuple[Tensor]:
+        # pair_idx = [graph.pair_id for graph in graphs]
+        # pair_idx = torch.stack(pair_idx, dim=0).T
+        pair_idx = graph.pair_id
+
+        # pred[i, j, :] += res[part_cnt, :]
+        pair_probs = nn.functional.softmax(predicts, dim=-1)
+        perm_mtx = torch.zeros([num_cfg, num_cfg], dtype=torch.float32, device=predicts.device)
+        perm_mtx[pair_idx[0], pair_idx[1]] = pair_probs[:, 0]
+        perm_mtx = perm_mtx + perm_mtx.T
+        perm_mtx = torch.diagonal_scatter(perm_mtx, torch.ones([num_cfg]))
+
+        join_prob = torch.log(perm_mtx).sum(dim=1)
+        # join_prob = torch.exp(join_prob)
+        return perm_mtx, join_prob
 
 
 class CheckpointWrapper:
