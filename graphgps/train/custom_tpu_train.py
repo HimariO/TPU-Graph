@@ -125,6 +125,8 @@ def train_epoch(logger, loader, model: TPUModel, optimizer, scheduler, emb_table
                 # pair_true = batch_obj.pair_y
                 loss = apply_pair_rank_loss(pred, true, train=True)
                 _pred = pred.detach().to('cpu', non_blocking=True)
+                _pred = _pred[_true >= 0]
+                _true = _true[_true >= 0]
             else:
                 true = true.view(-1, num_sample_config)
                 _true = true.detach().to('cpu', non_blocking=True)

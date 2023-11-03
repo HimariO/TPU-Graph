@@ -299,8 +299,8 @@ class TPUModel(torch.nn.Module):
         m = 2 if pair_rank else 1
         if enc_config:
             self.config_map = nn.Sequential(
-                nn.Linear(180 * m, 32, bias=True),
-                nn.BatchNorm1d(32),
+                nn.Linear(180 * m, 32 * m, bias=True),
+                nn.BatchNorm1d(32 * m),
             )
         if enc_tile_config:
             self.config_map = nn.Sequential(
@@ -314,7 +314,7 @@ class TPUModel(torch.nn.Module):
                 nn.Linear(extra_cfg_feat_dims * m, 128),
                 nn.ReLU(),
                 nn.BatchNorm1d(128),
-                nn.Linear(128, 32),
+                nn.Linear(128, 32 * m),
             )
         
         self.input_feat_key = input_feat_key
