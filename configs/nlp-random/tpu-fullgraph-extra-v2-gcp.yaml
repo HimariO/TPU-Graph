@@ -1,5 +1,5 @@
-out_dir: tests/xla-default-sage-fullenc-khop-extra-v2
-num_workers: 1
+out_dir: tests/nlp-random-fullgraph-extra-v2
+num_workers: 12
 num_threads: 16
 debug: false
 wandb:
@@ -12,13 +12,13 @@ dataset:
   task: graph
   task_type: ranking
   transductive: False
-  dir: datasets/
-  source: xla
-  search: default
-  num_sample_config: 128
+  dir: datasets
+  source: nlp
+  search: random
+  num_sample_config: 96
   eval_num_sample_config: 96
   input_feat_key: op_feat_enc_i
-  cache_in_memory: true
+  cache_in_memory: false
   khop:
     use: true
     hops: 2
@@ -30,14 +30,16 @@ dataset:
 train:
   mode: custom_tpu
   batch_size: 4
-  eval_period: 32
-  ckpt_period: 100
+  eval_period: 3
+  ckpt_period: 10
   sampler: full_batch
   auto_resume: true
   adap_margin: false
+  gst:
+    sample_full_graph: true
 model:
   type: custom_tpu_gnn
-  loss_fun: cross_entropy
+  loss_fun: hinge
   edge_decoding: dot
   graph_pooling: add
 gnn:
@@ -58,10 +60,9 @@ gnn:
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 3000
-  batch_accumulation: 2
+  max_epoch: 300
+  batch_accumulation: 1
 share:
   dim_in: 286
 device: cuda
-# model_ckpt: tests/nlp-random-fullenc-ft/tpu-pe-fullenc/0/best-447.ckpt
-seed: 6
+# model_ckpt: tests/nlp-default-sage-fullenc-khop-extra-v2/tpu-khop-extra-v2-gcp/0/76.ckpt

@@ -64,7 +64,7 @@ gnn:
   normalize_adj: False
   enc_config: true
   freeze_body: false
-  dim_feat_enc: 192
+  dim_feat_enc: 256
   dim_out: 2
 optim:
   optimizer: adam

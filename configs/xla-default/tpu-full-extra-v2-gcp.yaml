@@ -12,10 +12,10 @@ dataset:
   task: graph
   task_type: ranking
   transductive: False
-  dir: /home/ron_zhu/TPU-Graph/datasets/
+  dir: datasets/
   source: xla
   search: default
-  num_sample_config: 32
+  num_sample_config: 64
   eval_num_sample_config: 96
   input_feat_key: op_feat_enc_i
   cache_in_memory: true
@@ -23,13 +23,13 @@ dataset:
     use: true
     hops: 2
     bidirect: true
-  # config_sampler: IntervalSampler
+  config_sampler: IntervalSampler
   extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
   extra_cfg_feat_dims: 316
 
 train:
   mode: custom_tpu
-  batch_size: 4
+  batch_size: 2
   eval_period: 32
   ckpt_period: 100
   sampler: full_batch
@@ -60,8 +60,8 @@ gnn:
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 1500
-  batch_accumulation: 1
+  max_epoch: 2000
+  batch_accumulation: 2
 share:
   dim_in: 286
 device: cuda

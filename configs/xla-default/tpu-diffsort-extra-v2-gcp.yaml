@@ -1,4 +1,4 @@
-out_dir: tests/xla-default-sage-fullenc-khop-extra-v2
+out_dir: tests/xla-default-fullgraph-diffsort-extra-v2
 num_workers: 1
 num_threads: 16
 debug: false
@@ -15,7 +15,7 @@ dataset:
   dir: datasets/
   source: xla
   search: default
-  num_sample_config: 128
+  num_sample_config: 64
   eval_num_sample_config: 96
   input_feat_key: op_feat_enc_i
   cache_in_memory: true
@@ -29,15 +29,17 @@ dataset:
 
 train:
   mode: custom_tpu
-  batch_size: 4
+  batch_size: 2
   eval_period: 32
   ckpt_period: 100
   sampler: full_batch
   auto_resume: true
   adap_margin: false
+  gst:
+    sample_full_graph: true
 model:
   type: custom_tpu_gnn
-  loss_fun: cross_entropy
+  loss_fun: diffsort
   edge_decoding: dot
   graph_pooling: add
 gnn:
@@ -58,10 +60,10 @@ gnn:
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 3000
+  max_epoch: 2000
   batch_accumulation: 2
 share:
   dim_in: 286
 device: cuda
-# model_ckpt: tests/nlp-random-fullenc-ft/tpu-pe-fullenc/0/best-447.ckpt
-seed: 6
+seed: 4638
+# model_ckpt: tests/xla-default-fullgraph-khop-extra-v2/tpu-full-extra-v2-gcp/736/599.ckpt

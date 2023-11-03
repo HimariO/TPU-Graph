@@ -12,10 +12,10 @@ dataset:
   task: graph
   task_type: ranking
   transductive: False
-  dir: /home/ron/Projects/TPU-Graph/datasets/
+  dir: datasets/
   source: xla
   search: random
-  num_sample_config: 32
+  num_sample_config: 16
   eval_num_sample_config: 96
   input_feat_key: op_feat_enc_i
   cache_in_memory: false
@@ -72,3 +72,4 @@ share:
 device: cuda
 seed: 0
 model_ckpt: xla-random-vvc1mft7-767.ckpt
+# model_ckpt: xla-random-ymu1l0tf-dffsort-383.ckpt
