@@ -1,9 +1,9 @@
 out_dir: tests/xla-default-pair-rank
-num_workers: 16
+num_workers: 12
 num_threads: 32
 debug: false
 wandb:
-  use: false
+  use: true
   entity: togglec
   project: tpu-graph-v2
 dataset:
@@ -23,7 +23,7 @@ dataset:
     use: true
     hops: 2
     bidirect: true
-  config_sampler: IntervalSampler
+  # config_sampler: IntervalSampler
   extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
   extra_cfg_feat_dims: 316
 
@@ -62,10 +62,10 @@ gnn:
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 2000
-  batch_accumulation: 2
+  max_epoch: 3000
+  batch_accumulation: 1
 share:
   dim_in: 286
 device: cuda
-seed: 4638
-# model_ckpt: tests/xla-default-fullgraph-khop-extra-v2/tpu-full-extra-v2-gcp/736/599.ckpt
+seed: 10
+model_ckpt: tests/xla-default-pair-rank/tpu-pair-gcp/10/1199.ckpt

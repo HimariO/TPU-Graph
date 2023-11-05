@@ -1,9 +1,9 @@
-out_dir: tests/xla-default-pair
-num_workers: 0
+out_dir: tests/mix-default-fullgraph-extra-v2
+num_workers: 12
 num_threads: 16
 debug: false
 wandb:
-  use: false
+  use: true
   entity: togglec
   project: tpu-graph-v2
 dataset:
@@ -13,9 +13,9 @@ dataset:
   task_type: ranking
   transductive: False
   dir: datasets/
-  source: xla+nlp
+  source: nlp+xla
   search: default
-  num_sample_config: 24
+  num_sample_config: 32
   eval_num_sample_config: 96
   input_feat_key: op_feat_enc_i
   cache_in_memory: false
@@ -23,31 +23,23 @@ dataset:
     use: true
     hops: 2
     bidirect: true
-  # config_sampler: IntervalSampler
+  config_sampler: IntervalSampler
   extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
   extra_cfg_feat_dims: 316
 
 train:
   mode: custom_tpu
-  batch_size: 2
-  eval_period: 4
-  ckpt_period: 100
+  batch_size: 1
+  eval_period: 3
+  ckpt_period: 10
   sampler: full_batch
   auto_resume: true
-  adap_margin: true
-  ckpt_clean: true
+  adap_margin: false
   gst:
-    graph_embed_dims: 1
-    graph_embed_size: 1
-    sample_full_graph: true  # <--
-  regression:
-    use: false
-    val_min: 4719488
-    val_max: 434963275440
-  pair_rank: true  # <--
+    sample_full_graph: true
 model:
   type: custom_tpu_gnn
-  loss_fun: ranknet
+  loss_fun: hinge
   edge_decoding: dot
   graph_pooling: add
 gnn:
@@ -64,14 +56,14 @@ gnn:
   normalize_adj: False
   enc_config: true
   freeze_body: false
-  dim_feat_enc: 256  # <--
-  dim_out: 2  # <--
+  dim_feat_enc: 192
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 4000
-  batch_accumulation: 1
+  max_epoch: 200
+  batch_accumulation: 4
 share:
   dim_in: 286
 device: cuda
-# model_ckpt: xla-default-on0la3k3-2175.ckpt
+seed: 11
+model_ckpt: tests/mix-default-fullgraph-extra-v2/default-full-extra-v2-gcp/11/26.ckpt
