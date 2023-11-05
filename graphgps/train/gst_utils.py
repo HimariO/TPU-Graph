@@ -489,16 +489,14 @@ class TPUModel(torch.nn.Module):
             self.history.push(emb, flat_ind)
     
     def perum_matrix(self, graph: Data, predicts: Tensor, num_cfg: int) -> Tuple[Tensor]:
-        # pair_idx = [graph.pair_id for graph in graphs]
-        # pair_idx = torch.stack(pair_idx, dim=0).T
         pair_idx = graph.pair_id
 
         # pred[i, j, :] += res[part_cnt, :]
         pair_probs = nn.functional.softmax(predicts, dim=-1)
         perm_mtx = torch.zeros([num_cfg, num_cfg], dtype=torch.float32, device=predicts.device)
-        perm_mtx[pair_idx[0], pair_idx[1]] = pair_probs[:, 0]
-        perm_mtx = perm_mtx + perm_mtx.T
-        perm_mtx = torch.diagonal_scatter(perm_mtx, torch.ones([num_cfg]))
+        perm_mtx[pair_idx[0], pair_idx[1]] = pair_probs[:, 1]
+        perm_mtx = perm_mtx + (1.0 - perm_mtx.T)
+        perm_mtx = torch.diagonal_scatter(perm_mtx, torch.ones([num_cfg]))  # pad with nono-zero
 
         join_prob = torch.log(perm_mtx).sum(dim=1)
         # join_prob = torch.exp(join_prob)

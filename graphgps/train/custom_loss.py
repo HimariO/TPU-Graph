@@ -63,8 +63,8 @@ def apply_pair_rank_loss(y_pred, y_true, train=True):
     if y_true.ndim == 2:
         y_true = y_true.squeeze(0)
     mask = y_true >= 0
-    loss = nn.functional.cross_entropy(y_pred[mask], y_true[mask], reduction='mean')
-    return loss.mean()
+    loss = nn.functional.cross_entropy(y_pred[mask], y_true[mask], reduction='none')
+    return loss.sum()
 
 
 def pairwise_hinge_loss_batch(pred, true, base_margin=0.1, adaptive=False, **kwargs):

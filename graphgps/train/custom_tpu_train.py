@@ -374,9 +374,9 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
         model.load_state_dict(checkpoint['model_state'], strict=False)
     
     if start_epoch == cfg.optim.max_epoch:
-        logging.info('Checkpoint found, Task already done')
+        ulogger.warning('Checkpoint found, Task already done')
     else:
-        logging.info('Start from epoch %s', start_epoch)
+        ulogger.warning(f'Start from epoch {start_epoch}', )
 
     if cfg.wandb.use:
         try:
