@@ -334,6 +334,11 @@ class TPUGraphsNpz(Dataset):
         if not hasattr(self, "_meta"):
             op_feats = []
             print('Computing meta...')
+            save_file = os.path.join(self.processed_dir, f"{self.source}_{self.search}_meta.pt")
+            
+            if os.path.exists(save_file):
+                self._meta = torch.load(save_file)
+                return self._meta
             
             total_nodes = 0
             total_unq_segs = 0
@@ -373,6 +378,7 @@ class TPUGraphsNpz(Dataset):
                 num_unique_segments=total_unq_segs,
                 max_node_per_graph=max_nodes,
             )
+            torch.save(self._meta, save_file)
             print(self._meta)
         # self.data.op_feats = (self.data.op_feats - op_feats_mean) / op_feats_std
         return self._meta
@@ -598,7 +604,7 @@ class MixTPUGraphsNpz(Dataset):
         sizes = [len(dset) for dset in self.datasets.values()]
         return sum(sizes)
 
-    def get(self, idx):
+    def _get(self, idx):
         end_indies = [0] + list(accumulate(len(self.datasets[k]) for k in self.dataset_names))
         for i, (a, b) in enumerate(zip(end_indies, end_indies[1:])):
             if a <= idx < b:
@@ -609,6 +615,19 @@ class MixTPUGraphsNpz(Dataset):
                     graph.partition_idx += segment_offset
                 return graph
         raise IndexError(f"{idx} isn't a valid index in a dataset of size {len(self)}")
+
+    def get(self, idx):
+        if hasattr(self, 'split_name') and 'train' in self.split_name:            
+            i, src_name = random.choice(list(enumerate(self.dataset_names)))
+            src = self.datasets[src_name]
+            sub_id = random.randint(0, len(src) - 1)
+            graph: Data = src.get(sub_id)
+            if hasattr(graph, 'partition_idx'):
+                segment_offset = self.segment_offsets[i]
+                graph.partition_idx += segment_offset
+            return graph
+        else:
+            return self._get(idx)
     
     def get_idx_split(self):
         if not hasattr(self, "_split_idxs"):
