@@ -212,10 +212,11 @@ def dataset_sharding(root_dir, part_size=4000):
     from copy import deepcopy
     from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
 
-    dataset = TPUGraphsNpz(root_dir, source='nlp', search='default', task='layout')
+    dataset = TPUGraphsNpz(root_dir, source='nlp', search='random', task='layout')
     idx_split = dataset.get_idx_split()
     train_idx = deepcopy(idx_split['train'])
     last_idx = max([max(idx) for idx in idx_split.values()])
+    input(str(train_idx))
     
     for pt_id in tqdm(train_idx):
         pt_path = os.path.join(
@@ -269,11 +270,11 @@ def dataset_sharding(root_dir, part_size=4000):
                 idx_split['train'].append(last_idx)
             torch.save(graph, out_path)
         
-        pt_path = os.path.join(
-            dataset.processed_dir, 
-            dataset.processed_file_names[-1],
-        )
-        torch.save(idx_split, pt_path)
+    pt_path = os.path.join(
+        dataset.processed_dir, 
+        dataset.processed_file_names[-1],
+    )
+    torch.save(idx_split, pt_path)
 
 
 def insert_graph_id(root_dir, source, search):

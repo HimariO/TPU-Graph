@@ -1,3 +1,4 @@
+```json
 {
     'train_curve': {
         'epoch': [0, 1, 2, 3],
@@ -105,9 +106,9 @@
         'run_id': ''
     }
 }
+```
 
-
-
+```
 UPDATE-BASELINE:
 xla-random:
     best-val-opa: 0.5924
@@ -122,9 +123,21 @@ xla-tail:
     val-opa: 0.8673
 
 .17 + .13 + .17 + .11 + .12
+```
 
+```shell
 
 xla-def enselble test 11/1:
     * opa 73/seed 0: tests/xla-default-sage-fullenc-khop-extra/tpu-khop-extra/test_20231018_1697559303.pt
     * opa 73/seed 5: tests/xla-default-sage-fullenc-khop-extra/tpu-khop-extra/test_20231101_1698825964.pt
 '["tests/xla-default-sage-fullenc-khop-extra/tpu-khop-extra/test_20231018_1697559303.pt","tests/xla-default-sage-fullenc-khop-extra/tpu-khop-extra/test_20231101_1698825964.pt"]'
+```
+
+### Tricks Performance Compartion
+
+|           | GST+EX2 | FullGgraph | MixSearch  |   |
+|-----------|---------|------------|------------|---|
+| XLA-DEF   | 73      | "          | 80         |   |
+| XLA-RAND  | 75      | 78*        | __         |   |
+| NLP-DEF   | 77      | "          | "          |   |
+| NLP-RAND  | 94      | 97         | __         |   |

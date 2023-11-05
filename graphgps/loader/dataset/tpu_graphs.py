@@ -151,7 +151,7 @@ class BasicSampler:
                 # NOTE: overwrite duplicated samples with same id, so at least the label will also be the same 
                 # if we cant find the alternative samples, and we can exclue the duplicans in loss func by looking at label.
                 sample_idx[i + 1:][mask] = sample_idx[i]
-                pad_mask[i + 1:][mask] = True
+                pad_mask[i + 1:i + 1 + mask.size(0)][mask] = True
             if resample_ptr + mask.sum() >= num_config:
                 break
             if mask.any():
@@ -210,7 +210,7 @@ class IntervalSampler(BasicSampler):
             mask = delta < 1e-6
             if mask.any():
                 sample_idx[i + 1:][mask] = sample_idx[i]
-                pad_mask[i + 1:][mask] = True
+                pad_mask[i + 1:i + 1 + mask.size(0)][mask] = True
             if resample_ptr + mask.sum() >= len(self.intervals[ind]):
                 break
             if mask.any():
