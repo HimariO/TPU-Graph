@@ -552,13 +552,21 @@ def inference_only(loggers, loaders, model: TPUModel, optimizer=None, scheduler=
             continue
         
         rankings, labels = eval_epoch(loggers[i], loaders[i], model, split=split_name)
+        # df_dict = {
+        #     'ID': list(rankings.keys()), 
+        #     'TopConfigs': [
+        #         ';'.join(str(ind) for runtime, ind in ranks)
+        #         for ranks in rankings.values()
+        #     ]
+        # }
         df_dict = {
-            'ID': list(rankings.keys()), 
-            'TopConfigs': [
-                ';'.join(str(ind) for runtime, ind in ranks)
-                for ranks in rankings.values()
-            ]
+            'ID': [], 
+            'TopConfigs': []
         }
+        for gid, ranks in rankings.items():
+            df_dict['ID'].append(gid)
+            df_dict['TopConfigs'].append(';'.join(str(ind) for runtime, ind in ranks))
+        
         now = datetime.datetime.now()
         time_stamp = f"{now.year}{now.month:02}{now.day:02}_{int(now.timestamp())}"
         sub_file = os.path.join(cfg.out_dir, f'{split_name}_{time_stamp}.csv')

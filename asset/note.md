@@ -135,9 +135,9 @@ xla-def enselble test 11/1:
 
 ### Tricks Performance Compartion
 
-|           | GST+EX2 | FullGgraph | MixSearch  |   |
+|           | GST+EX2 | Full Graph | MixSearch  |   |
 |-----------|---------|------------|------------|---|
-| XLA-DEF   | 73      | "          | 80         |   |
-| XLA-RAND  | 75      | 78*        | __         |   |
+| XLA-DEF   | 73*     | "          | 79         |   |
+| XLA-RAND  | 75      | 78         | 92         |   |
 | NLP-DEF   | 77      | "          | "          |   |
-| NLP-RAND  | 94      | 97         | __         |   |
+| NLP-RAND  | 94      | 97*        | "          |   |

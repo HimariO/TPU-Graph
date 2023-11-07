@@ -1,9 +1,9 @@
 out_dir: tests/xla-random-extra-v2-full
-num_workers: 1
+num_workers: 0
 num_threads: 16
 debug: false
 wandb:
-  use: true
+  use: false
   entity: togglec
   project: tpu-graph-v2
 dataset:
@@ -16,7 +16,7 @@ dataset:
   source: xla
   search: random
   num_sample_config: 16
-  eval_num_sample_config: 96
+  eval_num_sample_config: 256
   input_feat_key: op_feat_enc_i
   cache_in_memory: false
   khop:
@@ -37,11 +37,6 @@ train:
   adap_margin: true
   gst:
     sample_full_graph: true
-  regression:
-    use: false
-    val_min: 4729001
-    val_max: 794889543954
-    weight: 1.0
 model:
   type: custom_tpu_gnn
   loss_fun: hinge
@@ -71,5 +66,7 @@ share:
   dim_in: 286
 device: cuda
 seed: 0
-model_ckpt: xla-random-vvc1mft7-767.ckpt
+model_ckpt: nlp-xla-random-default-nffzjn0g-7.ckpt
+# model_ckpt: nlp-xla-random-ilo6g97u-29.ckpt
+# model_ckpt: xla-random-vvc1mft7-767.ckpt
 # model_ckpt: xla-random-ymu1l0tf-dffsort-383.ckpt

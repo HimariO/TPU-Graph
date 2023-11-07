@@ -208,11 +208,39 @@ def strip_table(ckpt):
     torch.save(checkpoint, output)
 
 
+def check_mix_dataleak(root_dir):
+    from torch_geometric.graphgym.config import cfg, set_cfg
+    from graphgps.loader.dataset.tpu_graphs import MixTPUGraphsNpz
+    
+    set_cfg(cfg)
+    # cfg.dataset.extra_cfg_feat_keys = []
+    dataset = MixTPUGraphsNpz(root_dir, source='nlp+xla', search='random')
+    idx_split = dataset.get_idx_split()
+    subsets = {}
+    for k, idx in idx_split.items():
+        subsets[k] = dataset[idx]
+    print(idx_split)
+    
+    subset_graphs = defaultdict(set)
+    for name, subset in subsets.items():
+        for i in tqdm(range(len(subset))):
+            graph_name = subset[i].graph_name
+            graph_name = graph_name.replace('_train', '')
+            graph_name = graph_name.replace('_test', '')
+            graph_name = graph_name.replace('_val', '')
+            subset_graphs[name].add(graph_name)
+    
+    print('train & valid_xla_random', subset_graphs['train'].intersection(subset_graphs['valid_xla_random']))
+    print('train & valid_nlp_random', subset_graphs['train'].intersection(subset_graphs['valid_nlp_random']))
+    print('train & test', subset_graphs['train'].intersection(subset_graphs['test']))
+
+
+
 def dataset_sharding(root_dir, part_size=4000):
     from copy import deepcopy
     from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
 
-    dataset = TPUGraphsNpz(root_dir, source='nlp', search='random', task='layout')
+    dataset = TPUGraphsNpz(root_dir, source='nlp', search='default', task='layout')
     idx_split = dataset.get_idx_split()
     train_idx = deepcopy(idx_split['train'])
     last_idx = max([max(idx) for idx in idx_split.values()])
@@ -379,6 +407,14 @@ tests/xla-default-sage-fullenc-khop-extra/tpu-khop-extra/test_20231018_169755930
 tests/nlp-random-fullenc-ft/tpu-pe-fullenc/submission_20231001_1696152186.csv \
 tests/nlp-default-sage-fullenc-khop-extra/nlp-tpu-khop-extra/test_20231022_1697989360.csv \
 ~/Downloads/tpu-graph-files/merge_20231029.csv
+
+python3 csv_helper.py merge_csv \
+tests/xla-tile-pe/tpu-tiles-pe/submission_20231009_1696856596.csv \
+tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/test_20231101_1698852920.csv \ 
+tests/xla-default-sage-fullenc-khop-extra/tpu-khop-extra/test_20231018_1697559303.csv \
+tests/nlp-random-fullgraph-extra-v2/nlp-rand-fullgraph-extra-v2/test_20231103_1699008037.csv \
+tests/nlp-default-sage-fullenc-khop-extra/nlp-tpu-khop-extra/test_20231022_1697989360.csv \
+~/Downloads/tpu-graph-files/merge_20231107.csv
 """
 def merge_csv(xla_tile, xla_rand, xla_def, nlp_rand, nlp_def, out):
     csvs = [xla_tile, xla_rand, xla_def, nlp_rand, nlp_def]
@@ -692,4 +728,5 @@ if __name__ == '__main__':
         dataset_sharding.__name__: dataset_sharding,
         insert_graph_id.__name__: insert_graph_id,
         norm_gt_runtime.__name__: norm_gt_runtime,
+        check_mix_dataleak.__name__: check_mix_dataleak,
     })

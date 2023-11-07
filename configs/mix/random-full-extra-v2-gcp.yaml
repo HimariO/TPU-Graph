@@ -1,4 +1,4 @@
-out_dir: tests/mix-default-fullgraph-extra-v2
+out_dir: tests/mix-random-fullgraph-extra-v2
 num_workers: 12
 num_threads: 16
 debug: false
