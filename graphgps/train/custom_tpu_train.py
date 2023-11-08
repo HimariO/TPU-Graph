@@ -4,6 +4,7 @@ import time
 import copy
 import datetime
 from typing import *
+from pprint import pprint
 from collections import defaultdict
 from contextlib import nullcontext
 
@@ -26,6 +27,7 @@ from loguru import logger as ulogger
 from graphgps.loss.subtoken_prediction_loss import subtoken_cross_entropy
 from graphgps.utils import cfg_to_dict, flatten_dict, make_wandb_name
 from graphgps.history import History
+from graphgps.logger import eval_opa
 from graphgps.train.gst_utils import (
     batch_sample_graph_segs,
     batch_sample_full,
@@ -189,6 +191,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
     loader_bar.set_description_str('Eval Epoch')
     rankings = {} # defaultdict(list)
     labels = {}
+    named_pred_lab_pairs = {}
     
     for batch in loader_bar:
         # batch, _ = preprocess_batch(batch, model, num_sample_config)
@@ -297,6 +300,9 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
             else:
                 _pred = pred.detach().to('cpu')
             
+            for i, (p, t) in enumerate(_pred, _true):
+                named_pred_lab_pairs[batch_list[i].graph_name] = (p, t)
+            
             cur_task = cfg.dataset.get('tpu_task', 'layout')
             for batch_i, (runtimes, gt, indies) in enumerate(zip(_pred, _true, sampled_idx)):
                 runtimes = runtimes.cpu().tolist()
@@ -344,6 +350,12 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                             dataset_name=cfg.dataset.name,
                             **extra_stats)
         time_start = time.time()
+    
+    per_graph_opa = {}
+    for name, (p, t) in named_pred_lab_pairs.items():
+        per_graph_opa[name] = eval_opa(t, p)
+    pprint(per_graph_opa)
+    
     return rankings, labels
 
 
