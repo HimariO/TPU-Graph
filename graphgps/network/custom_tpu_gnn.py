@@ -6,6 +6,7 @@ from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.models.gnn import FeatureEncoder, GNNPreMP
 from torch_geometric.graphgym.register import register_network
 from torch_geometric.utils import to_dense_batch
+import torch_geometric as pyg
 
 from graphgps.layer.gatedgcn_layer import GatedGCNLayer
 from graphgps.layer.gine_conv_layer import GINEConvLayer
@@ -31,6 +32,28 @@ class PerformerWrapper(torch.nn.Module):
         h_dense, mask = to_dense_batch(h, batch.batch)
         h_attn = self.attn(h_dense, mask=mask)[mask]
         batch.x = self.norm2(batch.x + h_attn + h)
+        return batch
+
+
+class SAGEConvLayer(torch.nn.Module):
+
+    def __init__(self, layer_config, **kwargs):
+        super().__init__()
+        self.model = pyg.nn.SAGEConv(layer_config.dim_in, layer_config.dim_out,
+                                     bias=layer_config.has_bias)
+        self.norm = torch.nn.BatchNorm1d(layer_config.dim_in)
+        self.drop_prob = cfg.gnn.dropout
+        self.residual = cfg.gnn.residual
+        self.dropout = torch.nn.Dropout(p=cfg.gnn.dropout)
+
+    def forward(self, batch):
+        x_in = batch.x
+        batch.x = self.norm(batch.x)
+        if self.drop_prob > 0:
+            batch.x = self.dropout(batch.x)
+        batch.x = self.model(batch.x, batch.edge_index)
+        if self.residual:
+            batch.x = batch.x + x_in
         return batch
 
 
@@ -77,6 +100,8 @@ class CustomTpuGNN(torch.nn.Module):
             return GINEConvLayer
         elif model_type == 'sageconv':
             return SAGEConv
+        elif model_type == 'sageconvlayer':
+            return SAGEConvLayer
         else:
             raise ValueError("Model {} unavailable".format(model_type))
 

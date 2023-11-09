@@ -1,37 +1,37 @@
-out_dir: tests/mix-random-gst-extra-v2
-num_workers: 12
+out_dir: tests/xla-random-extra-v2
+num_workers: 0
 num_threads: 16
 debug: false
 wandb:
-  use: true
+  use: false
   entity: togglec
   project: tpu-graph-v2
 dataset:
-  name: MixTPUGraphsNpz
-  format: PyG-MixTPUGraphsNpz
+  name: TPUGraphsNpz
+  format: PyG-TPUGraphsNpz
   task: graph
   task_type: ranking
   transductive: False
   dir: datasets/
-  source: nlp+xla
+  source: xla
   search: random
-  num_sample_config: 64
-  eval_num_sample_config: 96
+  num_sample_config: 16
+  eval_num_sample_config: 128
   input_feat_key: op_feat_enc_i
   cache_in_memory: false
   khop:
     use: true
     hops: 2
     bidirect: true
-  config_sampler: IntervalSampler
+  # config_sampler: IntervalSampler
   extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
   extra_cfg_feat_dims: 316
 
 train:
-  mode: custom_tpu
-  batch_size: 8
-  eval_period: 3
-  ckpt_period: 10
+  mode: valid-tpu
+  batch_size: 4
+  eval_period: 32
+  ckpt_period: 100
   sampler: full_batch
   auto_resume: true
   adap_margin: true
@@ -60,10 +60,10 @@ gnn:
 optim:
   optimizer: adam
   base_lr: 0.0001
-  max_epoch: 100
+  max_epoch: 1000
   batch_accumulation: 1
 share:
   dim_in: 286
 device: cuda
-seed: 13
-# model_ckpt: tests/mix-default-fullgraph-extra-v2/default-full-extra-v2-gcp/11/26.ckpt
+seed: 0
+model_ckpt: nlp-xla-random-pin2ew0o-35.ckpt

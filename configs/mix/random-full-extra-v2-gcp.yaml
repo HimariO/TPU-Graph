@@ -30,7 +30,7 @@ dataset:
 train:
   mode: custom_tpu
   batch_size: 2
-  eval_period: 3
+  eval_period: 1
   ckpt_period: 10
   sampler: full_batch
   auto_resume: true

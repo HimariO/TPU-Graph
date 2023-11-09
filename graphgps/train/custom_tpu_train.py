@@ -573,13 +573,6 @@ def inference_only(loggers, loaders, model: TPUModel, optimizer=None, scheduler=
             continue
         
         rankings, labels = eval_epoch(loggers[i], loaders[i], model, split=split_name)
-        # df_dict = {
-        #     'ID': list(rankings.keys()), 
-        #     'TopConfigs': [
-        #         ';'.join(str(ind) for runtime, ind in ranks)
-        #         for ranks in rankings.values()
-        #     ]
-        # }
         df_dict = {
             'ID': [], 
             'TopConfigs': []

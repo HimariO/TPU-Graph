@@ -1,4 +1,4 @@
-out_dir: tests/mix-random-gst-extra-v2
+out_dir: tests/mix-random-fullgraph-extra-v2
 num_workers: 12
 num_threads: 16
 debug: false
@@ -29,14 +29,14 @@ dataset:
 
 train:
   mode: custom_tpu
-  batch_size: 8
+  batch_size: 2
   eval_period: 3
   ckpt_period: 10
   sampler: full_batch
   auto_resume: true
   adap_margin: true
   gst:
-    sample_full_graph: false
+    sample_full_graph: true
 model:
   type: custom_tpu_gnn
   loss_fun: hinge
@@ -47,11 +47,12 @@ gnn:
   layers_mp: 3
   layers_post_mp: 2
   dim_inner: 256
-  layer_type: sageconv
+  layer_type: gatedgcnconv
   stage_type: skipsum
   batchnorm: False
   act: prelu
-  dropout: 0.1
+  dropout: 0.2
+  residual: true
   agg: mean
   normalize_adj: False
   enc_config: true
@@ -61,9 +62,9 @@ optim:
   optimizer: adam
   base_lr: 0.0001
   max_epoch: 100
-  batch_accumulation: 1
+  batch_accumulation: 2
 share:
   dim_in: 286
 device: cuda
-seed: 13
+seed: 15
 # model_ckpt: tests/mix-default-fullgraph-extra-v2/default-full-extra-v2-gcp/11/26.ckpt

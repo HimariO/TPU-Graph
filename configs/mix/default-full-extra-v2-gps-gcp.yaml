@@ -1,0 +1,107 @@
+out_dir: tests/mix-default-fullgraph-extra-v2-gps
+num_workers: 12
+num_threads: 16
+debug: false
+wandb:
+  use: false
+  entity: togglec
+  project: tpu-graph-v2
+dataset:
+  name: MixTPUGraphsNpz
+  format: PyG-MixTPUGraphsNpz
+  task: graph
+  task_type: ranking
+  transductive: False
+  dir: datasets/
+  source: xla+nlp
+  search: default
+  num_sample_config: 16
+  eval_num_sample_config: 96
+  input_feat_key: op_feat_enc_i
+  cache_in_memory: false
+  khop:
+    use: true
+    hops: 2
+    bidirect: true
+  config_sampler: IntervalSampler
+  extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
+  extra_cfg_feat_dims: 316
+
+  node_encoder: True
+  node_encoder_name: SignNet+RWSE
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: DummyEdge
+  edge_encoder_bn: False
+
+train:
+  mode: custom_tpu
+  batch_size: 1
+  eval_period: 3
+  ckpt_period: 10
+  sampler: full_batch
+  auto_resume: true
+  adap_margin: false
+  gst:
+    sample_full_graph: true
+
+posenc_SignNet:
+  enable: True
+  eigen:
+    laplacian_norm: none
+    eigvec_norm: L2
+    max_freqs: 37  # Max graph size in molpcba is 332, but 97.1% are <= 37
+  model: DeepSet
+  dim_pe: 32  # Note: In original SignNet codebase dim_pe is always equal to max_freq
+  layers: 2  # Num. layers in \phi model
+  post_layers: 2  # Num. layers in \rho model; The original uses the same as in \phi
+  phi_hidden_dim: 32
+  phi_out_dim: 16
+posenc_RWSE:
+  enable: True
+  kernel:
+    times_func: range(1,17)
+  model: Linear
+  dim_pe: 16
+  raw_norm_type: BatchNorm
+
+model:
+  type: GPSModel
+  loss_fun: hinge
+  edge_decoding: dot
+  graph_pooling: add
+gt:
+  layer_type: CustomGatedGCN+Transformer
+  layers: 3
+  n_heads: 4
+  dim_hidden: 256  # `gt.dim_hidden` must match `gnn.dim_inner`
+  dropout: 0.2
+  attn_dropout: 0.5
+  layer_norm: False
+  batch_norm: True
+gnn:
+  layers_pre_mp: 1
+  # layers_mp: 3
+  layers_post_mp: 2
+  dim_inner: 256
+  layer_type: sageconv
+  stage_type: skipsum
+  batchnorm: False
+  act: prelu
+  dropout: 0.1
+  agg: mean
+  normalize_adj: False
+  enc_config: true
+  freeze_body: false
+  dim_feat_enc: 240
+
+optim:
+  optimizer: adam
+  base_lr: 0.0001
+  max_epoch: 200
+  batch_accumulation: 4
+share:
+  dim_in: 192
+device: cuda
+seed: 16
+# model_ckpt: tests/mix-default-fullgraph-extra-v2/default-full-extra-v2-gcp/11/26.ckpt
