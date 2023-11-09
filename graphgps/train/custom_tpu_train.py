@@ -4,7 +4,6 @@ import time
 import copy
 import datetime
 from typing import *
-from pprint import pprint
 from collections import defaultdict
 from contextlib import nullcontext
 
@@ -23,6 +22,10 @@ from torch_geometric.graphgym.utils.epoch import is_eval_epoch, is_ckpt_epoch
 from torch_geometric.data import Data
 from tqdm import tqdm
 from loguru import logger as ulogger
+try:
+    from prettyprinter import cpprint as pprint
+except ImportError:
+    from pprint import pprint
 
 from graphgps.loss.subtoken_prediction_loss import subtoken_cross_entropy
 from graphgps.utils import cfg_to_dict, flatten_dict, make_wandb_name
@@ -191,7 +194,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
     loader_bar.set_description_str('Eval Epoch')
     rankings = {} # defaultdict(list)
     labels = {}
-    named_pred_lab_pairs = {}
+    named_pred_lab_pairs = []
     
     for batch in loader_bar:
         # batch, _ = preprocess_batch(batch, model, num_sample_config)
@@ -300,8 +303,8 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
             else:
                 _pred = pred.detach().to('cpu')
             
-            for i, (p, t) in enumerate(_pred, _true):
-                named_pred_lab_pairs[batch_list[i].graph_name] = (p, t)
+            for i, (p, t) in enumerate(zip(_pred, _true)):
+                named_pred_lab_pairs.append({'name': batch_list[i].graph_name, 'pred': p, 'true': t})
             
             cur_task = cfg.dataset.get('tpu_task', 'layout')
             for batch_i, (runtimes, gt, indies) in enumerate(zip(_pred, _true, sampled_idx)):
@@ -318,7 +321,7 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 ordered = set((rt, ind) for rt, ind in zip(runtimes, indies))
                 ordered = sorted(ordered)
                 ordered_gt = set((rt, ind) for rt, ind in zip(gt, indies))
-                ordered_gt = sorted(ordered)
+                ordered_gt = sorted(ordered_gt)
                 
                 graph_configs = torch.cat([segs.config_feats.int() for segs in batch_seg], dim=0)
                 same_cfgs = all((graph_configs[j] == graph_configs[0]).all() for j in range(len(graph_configs)))
@@ -328,9 +331,12 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                     ulogger.warning(f"Weird prediction values detected! {same_cfgs}, {exact_inorder}, {batch.graph_name}")
                 abnorm = duplicated or (exact_inorder and not same_cfgs)
                 # HACK: xla-tile test set have some known issue, ignore it for now.
-                if 'test' in split and cur_task != 'tile' and abnorm:
-                    breakpoint()
-                    raise RuntimeError('Weird prediction values detected!')
+                if abnorm:
+                    if 'test' in split and cur_task != 'tile':
+                        breakpoint()
+                        raise RuntimeError('Weird prediction values detected!')
+                    else:
+                        ulogger.warning(f"abnorm prediction with {item_name}")
                 
                 if cur_task == 'tile':
                     ordered = ordered[:10]
@@ -352,8 +358,11 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
         time_start = time.time()
     
     per_graph_opa = {}
-    for name, (p, t) in named_pred_lab_pairs.items():
-        per_graph_opa[name] = eval_opa(t, p)
+    for pred_dict in named_pred_lab_pairs:
+        name = pred_dict['name']
+        p = pred_dict['pred']
+        t = pred_dict['true']
+        per_graph_opa[name] = eval_opa(t.numpy(), p.numpy())
     pprint(per_graph_opa)
     
     return rankings, labels

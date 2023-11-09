@@ -392,6 +392,13 @@ def preformat_TPUGraphsNpz(dataset_dir, pre_transforms=None):
     return dataset
 
 def preformat_MixTPUGraphsNpz(dataset_dir, pre_transforms=None):
+    if cfg.dataset.khop.use:
+        transform = KeepKHop(
+            hops=cfg.dataset.khop.hops, 
+            bidirect=cfg.dataset.khop.bidirect
+        )
+    else:
+        transform = None
    
     dataset = MixTPUGraphsNpz(
         dataset_dir, 
@@ -399,6 +406,7 @@ def preformat_MixTPUGraphsNpz(dataset_dir, pre_transforms=None):
         search=cfg.dataset.get('search', 'default+random'),
         cache_in_memory=cfg.dataset.cache_in_memory,
         pre_transform=pre_transforms,
+        transform=transform,
     )
     dataset.name = 'MixTPUGraphsNpz'
     dataset.split_idxs = []  # HACK: a place holder, the actual split indexs will be generated in `set_dataset_splits`

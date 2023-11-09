@@ -10,3 +10,4 @@ fire
 ranky
 loguru
 pysnooper
+prettyprinter

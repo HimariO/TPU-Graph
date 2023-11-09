@@ -141,3 +141,21 @@ xla-def enselble test 11/1:
 | XLA-RAND  | 75      | 78         | 92         |   |
 | NLP-DEF   | 77      | "          | "          |   |
 | NLP-RAND  | 94      | 97*        | "          |   |
+
+```py
+{'bert_pretraining.4x4.fp16': 0.8631889763779528,
+ 'inception_v3_batch_128_train': 0.6839320866141733,
+ 'mlperf_bert_batch_24_2x2': 0.8222194881889764,
+ 'resnet50.4x4.fp16': 0.8955462598425197,
+ 'resnet_v1_50_official_batch_128_bf16': 0.6740895669291339,
+ 'tf2_bert_pretrain_dynamic_batch_size': 0.905880905511811,
+ 'unet_3d.4x4.bf16': 0.5915354330708661}
+
+{'bert_pretraining.4x4.fp16': 0.9277805118110236,
+ 'inception_v3_batch_128_train': 0.921136811023622,
+ 'mlperf_bert_batch_24_2x2': 0.9056348425196851,
+ 'resnet50.4x4.fp16': 0.9261811023622047,
+ 'resnet_v1_50_official_batch_128_bf16': 0.6941437007874016,
+ 'tf2_bert_pretrain_dynamic_batch_size': 0.9251968503937008,
+ 'unet_3d.4x4.bf16': 0.8567913385826772}
+```
