@@ -55,6 +55,7 @@ def extended_cfg(cfg):
     cfg.dataset.source = 'nlp'
     cfg.dataset.search = 'random'
     cfg.dataset.tpu_task = 'layout'
+    cfg.dataset.valid_for_train = []
     cfg.dataset.cache_in_memory = False
     cfg.dataset.inference_split = 'test'
     cfg.dataset.inference_num_config_cap = 1_000_000

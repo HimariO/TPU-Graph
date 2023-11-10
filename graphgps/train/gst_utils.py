@@ -213,7 +213,8 @@ def form_config_pair(graph: Data, train=False) -> Data:
         extra_feat = getattr(graph, feat_key)
         extra_first  = extra_feat[:, pair_first, :]
         extra_second = extra_feat[:, pair_second, :]
-        pair_extra = torch.cat([extra_first, extra_second], dim=-1)
+        delta = extra_first - extra_second
+        pair_extra = torch.cat([extra_first, extra_second, delta], dim=-1)
         setattr(graph, feat_key, pair_extra)
     
     y_first = graph.y[pair_first]
@@ -299,7 +300,7 @@ class TPUModel(torch.nn.Module):
         m = 2 if pair_rank else 1
         if enc_config:
             self.config_map = nn.Sequential(
-                nn.Linear(180 * m, 32 * m, bias=True),
+                nn.Linear(180 * (m + int(m > 1)), 32 * m, bias=True),
                 nn.BatchNorm1d(32 * m),
             )
         if enc_tile_config:
@@ -388,7 +389,10 @@ class TPUModel(torch.nn.Module):
                     batch_embed = tnn.global_max_pool(batch.x, batch.batch) \
                                     + tnn.global_mean_pool(batch.x, batch.batch)
         
-        graph_embed = batch_embed / torch.norm(batch_embed, dim=-1, keepdim=True)
+        if cfg.gnn.post_mp_norm:
+            graph_embed = batch_embed / torch.norm(batch_embed, dim=-1, keepdim=True)
+        else:
+            graph_embed = batch_embed
         
         if self.graph_embed_dims == 1:
             for i, module in enumerate(custom_gnn.children()):

@@ -135,6 +135,8 @@ def load_dataset_master(format, name, dataset_dir):
                 is_undirected=is_undirected,
                 cfg=cfg
             )
+            if cfg.dataset.valid_for_train:
+                raise ValueError()
             dataset = preformat_TPUGraphsNpz(dataset_dir, pre_transforms=posenc_stats_fn)
         
         elif pyg_dataset_id == 'MixTPUGraphsNpz':
@@ -146,7 +148,11 @@ def load_dataset_master(format, name, dataset_dir):
                 is_undirected=is_undirected,
                 cfg=cfg
             )
-            dataset = preformat_MixTPUGraphsNpz(dataset_dir, pre_transforms=posenc_stats_fn)
+            dataset = preformat_MixTPUGraphsNpz(
+                dataset_dir, 
+                pre_transforms=posenc_stats_fn, 
+                valid_for_train=cfg.dataset.valid_for_train,
+            )
 
         elif pyg_dataset_id == 'Planetoid':
             dataset = Planetoid(dataset_dir, name)
@@ -391,7 +397,7 @@ def preformat_TPUGraphsNpz(dataset_dir, pre_transforms=None):
 
     return dataset
 
-def preformat_MixTPUGraphsNpz(dataset_dir, pre_transforms=None):
+def preformat_MixTPUGraphsNpz(dataset_dir, pre_transforms=None, valid_for_train=[]):
     if cfg.dataset.khop.use:
         transform = KeepKHop(
             hops=cfg.dataset.khop.hops, 
@@ -407,6 +413,7 @@ def preformat_MixTPUGraphsNpz(dataset_dir, pre_transforms=None):
         cache_in_memory=cfg.dataset.cache_in_memory,
         pre_transform=pre_transforms,
         transform=transform,
+        valid_for_train=valid_for_train,
     )
     dataset.name = 'MixTPUGraphsNpz'
     dataset.split_idxs = []  # HACK: a place holder, the actual split indexs will be generated in `set_dataset_splits`

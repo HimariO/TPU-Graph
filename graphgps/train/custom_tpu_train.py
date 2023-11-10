@@ -313,10 +313,13 @@ def eval_epoch(logger, loader, model: TPUModel, split='val'):
                 indies = indies.cpu().tolist()
                 
                 graph_name = batch_list[batch_i].graph_name
-                if cur_task == 'layout':
-                    item_name = f"layout:{cfg.dataset.source}:{cfg.dataset.search}:{graph_name}"
+                if hasattr(batch_list[batch_i], "submit_id"):
+                    item_name = batch_list[batch_i].submit_id
                 else:
-                    item_name = f"tile:xla:{graph_name}"
+                    if cur_task == 'layout':
+                        item_name = f"layout:{cfg.dataset.source}:{cfg.dataset.search}:{graph_name}"
+                    else:
+                        item_name = f"tile:xla:{graph_name}"
                 
                 ordered = set((rt, ind) for rt, ind in zip(runtimes, indies))
                 ordered = sorted(ordered)

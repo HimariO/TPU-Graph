@@ -513,6 +513,7 @@ class TPUGraphsNpz(Dataset):
         
         data.config_feats = data.config_feats.float()
         data.source_dataset = f"{self.source}-{self.search}-{idx}" if self.task == 'layout' else f"xla-tile-{idx}"
+        data.submit_id = f"{self.task}:{self.source}:{self.search}:{data.graph_name}"
 
         if self.transform:
             data = self.transform(data)
@@ -545,6 +546,7 @@ class MixTPUGraphsNpz(Dataset):
           source: str = 'nlp+xla',  # 'nlp' or 'xla'
           search: str = 'random+default',  # 'random' or 'default'
           cache_in_memory: bool = False,
+          valid_for_train: List[str] = [],
         ):
         source: List[str] = sorted(source.split('+'))
         search: List[str] = sorted(search.split('+'))
@@ -564,7 +566,14 @@ class MixTPUGraphsNpz(Dataset):
                 search=b,
                 cache_in_memory=cache_in_memory,
             )
-        self.custom_split_names = ['train'] + [f'valid_{v}' for v in self.dataset_names] + ['test']  # for split_generator.py
+        self.valid_for_train = valid_for_train
+        self.custom_split_names = ['train'] 
+        self.custom_split_names += [
+            f'valid_{v}' 
+            for v in self.dataset_names 
+            if v not in self.valid_for_train
+        ]
+        self.custom_split_names += ['test']  # for split_generator.py
         super().__init__(root, transform, pre_transform, pre_filter)
         
         # HACK: dummy for passing graphgps dataset check
@@ -640,7 +649,10 @@ class MixTPUGraphsNpz(Dataset):
                 for split, idx in dataset.get_idx_split().items():
                     off_idx = [j + offset for j in idx]
                     if split == 'valid':
-                        self._split_idxs[f"valid_{name}"] = off_idx
+                        if name in self.valid_for_train:
+                            self._split_idxs[f"train"] += off_idx
+                        else:
+                            self._split_idxs[f"valid_{name}"] = off_idx
                     else:
                         self._split_idxs[split] += off_idx
         return self._split_idxs
