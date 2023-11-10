@@ -14,3 +14,4 @@ def custom_gnn_cfg(cfg):
     cfg.gnn.enc_tile_config = False
     cfg.gnn.freeze_body = False
     cfg.gnn.dim_out = 1
+    cfg.gnn.post_mp_norm = True
