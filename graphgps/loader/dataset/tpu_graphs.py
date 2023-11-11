@@ -525,6 +525,9 @@ class TPUGraphsNpz(Dataset):
                 scope = cfg.train.regression.val_max - cfg.train.regression.val_min
                 data.y = (data.y / scope) * 100
         
+        if hasattr(data, 'graph_idx'):
+            delattr(data, 'graph_idx')
+            delattr(data, 'graph_config_idx')
         return data
     
     def get_idx_split(self):

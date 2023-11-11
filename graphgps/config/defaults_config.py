@@ -75,3 +75,4 @@ def extended_cfg(cfg):
 
     cfg.debug = False
     cfg.model_ckpt = ''
+    cfg.prefetch_factor = 2

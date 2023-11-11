@@ -128,11 +128,16 @@ def get_loader(dataset, sampler, batch_size, shuffle=True, train=False):
             ) 
         )
         
+        if cfg.num_workers > 0:
+            prefetch_factor = cfg.prefetch_factor if train else (1 if cfg.train.pair_rank else 2)
+        else:
+            prefetch_factor = None
         loader_train = DataLoader(dataset, batch_size=batch_size,
                                   shuffle=shuffle, 
                                   num_workers=cfg.num_workers,
                                   pin_memory=False, 
                                   persistent_workers=cfg.num_workers > 0,
+                                  prefetch_factor=prefetch_factor,
                                   collate_fn=collate_fn)
     elif sampler == "neighbor":
         loader_train = NeighborSampler(

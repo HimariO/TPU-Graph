@@ -207,14 +207,14 @@ def form_config_pair(graph: Data, train=False) -> Data:
     
     feat_first  = graph.config_feats_full[:, pair_first, :]
     feat_second = graph.config_feats_full[:, pair_second, :]
-    graph.config_feats_full = torch.cat([feat_first, feat_second], dim=-1)
+    delta = feat_first - feat_second
+    graph.config_feats_full = torch.cat([feat_first, feat_second, delta], dim=-1)
 
     for feat_key in cfg.dataset.extra_cfg_feat_keys:
         extra_feat = getattr(graph, feat_key)
         extra_first  = extra_feat[:, pair_first, :]
         extra_second = extra_feat[:, pair_second, :]
-        delta = extra_first - extra_second
-        pair_extra = torch.cat([extra_first, extra_second, delta], dim=-1)
+        pair_extra = torch.cat([extra_first, extra_second], dim=-1)
         setattr(graph, feat_key, pair_extra)
     
     y_first = graph.y[pair_first]
