@@ -293,7 +293,7 @@ class TPUModel(torch.nn.Module):
         
         self.graph_embed_dims = graph_embed_dims
         if graph_embed_dims == 1:
-            self.history = History(500_000_000, 1)
+            self.history = History(500, 1)
         else:
             self.history = History(14_000_000, graph_embed_size)
         
@@ -305,8 +305,8 @@ class TPUModel(torch.nn.Module):
             )
         if enc_tile_config:
             self.config_map = nn.Sequential(
-                nn.Linear(336, 32, bias=True),
-                nn.BatchNorm1d(32),
+                nn.Linear(336, 64, bias=True),
+                nn.BatchNorm1d(64),
             )
         
         self.extra_cfg_feat_keys = extra_cfg_feat_keys
@@ -380,14 +380,14 @@ class TPUModel(torch.nn.Module):
         custom_gnn = self.model.model  # TPUModel.GraphGymModule.GNN
         module_len = len(list(custom_gnn.children()))
         predict_ctx = torch.no_grad() if freeze_body else nullcontext()
+        x_in = batch.x
 
         with predict_ctx:
             for i, module in enumerate(custom_gnn.children()):
                 if i < module_len - 1:
                     batch = module(batch)
-                if i == module_len - 1:
-                    batch_embed = tnn.global_max_pool(batch.x, batch.batch) \
-                                    + tnn.global_mean_pool(batch.x, batch.batch)
+            batch_embed = tnn.global_max_pool(batch.x, batch.batch) \
+                            + tnn.global_mean_pool(batch.x, batch.batch)
         
         if cfg.gnn.post_mp_norm:
             graph_embed = batch_embed / torch.norm(batch_embed, dim=-1, keepdim=True)

@@ -12,7 +12,7 @@ dataset:
   task: graph
   task_type: ranking
   transductive: False
-  dir: /home/ron/Projects/TPU-Graph/datasets/
+  dir: datasets/
   source: xla
   search: random
   tpu_task: tile
@@ -20,12 +20,17 @@ dataset:
   eval_num_sample_config: 128
   input_feat_key: op_feat_enc_i
   cache_in_memory: true
+  config_sampler: IntervalSampler
 train:
   mode: custom_tpu
   batch_size: 96
   eval_period: 8
   ckpt_period: 100
   sampler: full_batch
+  auto_resume: true
+  adap_margin: false
+  gst:
+    sample_full_graph: true
 model:
   type: custom_tpu_gnn
   loss_fun: cross_entropy
@@ -35,7 +40,7 @@ gnn:
   layers_pre_mp: 1
   layers_mp: 3
   layers_post_mp: 2
-  dim_inner: 256
+  dim_inner: 512
   layer_type: sageconv
   stage_type: skipsum
   batchnorm: False
@@ -43,8 +48,9 @@ gnn:
   dropout: 0.1
   agg: mean
   normalize_adj: False
-  dim_feat_enc: 160
+  dim_feat_enc: 192
   enc_tile_config: true
+  post_mp_norm: false
 optim:
   optimizer: adam
   base_lr: 0.0001
