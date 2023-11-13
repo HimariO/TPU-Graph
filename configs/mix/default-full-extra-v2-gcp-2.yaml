@@ -1,0 +1,72 @@
+out_dir: tests/mix-default-fullgraph-extra-v2-2
+num_workers: 12
+num_threads: 16
+prefetch_factor: 4
+debug: false
+wandb:
+  use: true
+  entity: togglec
+  project: tpu-graph-v2
+dataset:
+  name: MixTPUGraphsNpz
+  format: PyG-MixTPUGraphsNpz
+  task: graph
+  task_type: ranking
+  transductive: False
+  dir: datasets/
+  source: xla+nlp
+  search: default
+  num_sample_config: 32
+  eval_num_sample_config: 96
+  input_feat_key: op_feat_enc_i
+  cache_in_memory: false
+  khop:
+    use: true
+    hops: 2
+    bidirect: true
+  config_sampler: IntervalSampler
+  extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
+  extra_cfg_feat_dims: 316
+
+train:
+  mode: custom_tpu
+  batch_size: 2
+  eval_period: 1
+  ckpt_period: 8
+  sampler: full_batch
+  auto_resume: true
+  adap_margin: false
+  gst:
+    sample_full_graph: true
+model:
+  type: custom_tpu_gnn
+  loss_fun: hinge
+  edge_decoding: dot
+  graph_pooling: add
+gnn:
+  layers_pre_mp: 1
+  layers_mp: 3
+  layers_post_mp: 2
+  dim_inner: 512  # <--
+  layer_type: sageconv
+  stage_type: skipsum
+  batchnorm: False
+  act: prelu
+  dropout: 0.1
+  residual: true
+  agg: mean
+  normalize_adj: False
+  enc_config: true
+  freeze_body: false
+  dim_feat_enc: 192
+  post_mp_norm: false  # <--
+optim:
+  optimizer: adam
+  base_lr: 0.0001
+  max_epoch: 100
+  batch_accumulation: 2
+share:
+  dim_in: 286
+device: cuda
+seed: 31
+# model_ckpt: tests/mix-random-fullgraph-extra-v2/random-full-extra-v2-gcp/21/best-51.ckpt
