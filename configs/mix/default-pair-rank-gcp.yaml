@@ -1,6 +1,6 @@
-out_dir: tests/mix-all-fullgraph-extra-v2
-num_workers: 8
-num_threads: 16
+out_dir: tests/mix-default-pair-rank
+num_workers: 12
+num_threads: 32
 prefetch_factor: 4
 debug: false
 wandb:
@@ -15,29 +15,30 @@ dataset:
   transductive: False
   dir: datasets/
   source: xla+nlp
-  search: default+random
+  search: default
   num_sample_config: 48
-  eval_num_sample_config: 96
+  eval_num_sample_config: 64
   input_feat_key: op_feat_enc_i
   cache_in_memory: false
   khop:
     use: true
     hops: 2
     bidirect: true
-  config_sampler: IntervalSampler
+  # config_sampler: IntervalSampler
   extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
   extra_cfg_feat_dims: 316
 
 train:
   mode: custom_tpu
-  batch_size: 2
-  eval_period: 1
-  ckpt_period: 2
+  batch_size: 4
+  eval_period: 4
+  ckpt_period: 8
   sampler: full_batch
   auto_resume: true
   adap_margin: false
   gst:
     sample_full_graph: true
+  pair_rank: true
 model:
   type: custom_tpu_gnn
   loss_fun: hinge
@@ -52,19 +53,21 @@ gnn:
   stage_type: skipsum
   batchnorm: False
   act: prelu
-  dropout: 0.2
+  dropout: 0.1
   agg: mean
   normalize_adj: False
   enc_config: true
   freeze_body: false
-  dim_feat_enc: 192
+  dim_feat_enc: 256  # <--
+  dim_out: 2  # <--
+  post_mp_norm: false
 optim:
   optimizer: adam
-  base_lr: 0.0001
-  max_epoch: 100
-  batch_accumulation: 2
+  base_lr: 0.0002
+  max_epoch: 200
+  batch_accumulation: 1
 share:
   dim_in: 286
 device: cuda
-seed: 20
-# model_ckpt: tests/mix-random-fullgraph-extra-v2/random-full-extra-v2-gcp/20/best-3.ckpt
+seed: 10
+model_ckpt: tests/mix-default-pair-rank/default-pair-rank-gcp/10/best-19.ckpt

@@ -28,7 +28,8 @@ dataset:
   extra_cfg_feat_dims: 316
 
 train:
-  mode: inference-tpu
+  mode: valid-tpu
+  # mode: inference-tpu
   batch_size: 4
   eval_period: 32
   ckpt_period: 100
@@ -62,6 +63,7 @@ gnn:
   enc_config: true
   freeze_body: false
   dim_feat_enc: 192
+  # post_mp_norm: false
 optim:
   optimizer: adam
   base_lr: 0.0001
@@ -71,4 +73,5 @@ share:
   dim_in: 286
 device: cuda
 seed: 0
-model_ckpt: nlp-xla-default-oeuhc850-69.ckpt
+model_ckpt: nlp-xla-default-xse9mvyf-71.ckpt
+# model_ckpt: nlp-xla-default-oeuhc850-69.ckpt
