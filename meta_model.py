@@ -211,8 +211,8 @@ def train():
     from lightning.pytorch.loggers import WandbLogger
     from lightning.pytorch.callbacks import ModelCheckpoint
     pred_files = [
-        "./tests/xla-default-fullenc/tpu-pe-fullenc/valid_20231017_1697492282.pt",
-        "./tests/xla-default-fullenc-khop/tpu-pe-fullenc-khop/valid_20231017_1697507211.pt",
+        "./tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/valid_20231110_1699607932.pt",
+        "./tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/valid_20231111_1699644886.pt",
     ]
     model = LitEncoder(feat_dim=len(pred_files) * 41, emb_dim=64)
     
@@ -274,16 +274,14 @@ def ensemble(pred_files: List[str], ckpt: str, out_csv: str):
 
 if __name__ == '__main__':
     from loguru import logger
-    with logger.catch():
+    with logger.catch(reraise=True):
         # test_dataset()
         # train()
-        # insert_node_feature(
-        #     "datasets/TPUGraphsNpz/processed/xla_tile_data_*.pt", 
-        #     "feat-encoder.ckpt",
-        # )
         ensemble(
-            ["tests/xla-default-fullenc/tpu-pe-fullenc/test_20231019_1697729115.pt",
-            "tests/xla-default-fullenc-khop/tpu-pe-fullenc-khop/test_20231019_1697722716.pt"],
-            "lightning_logs/version_6/checkpoints/epoch=999-step=175000.ckpt",
-            "xla_def_meta_2.csv",
+            [
+                "tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/test_20231109_1699505166.pt",
+                "tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/test_20231111_1699644416.pt"
+            ],
+            "lightning_logs/version_8/checkpoints/epoch=85-step=15000.ckpt",
+            "xla_rand_meta.csv",
         )

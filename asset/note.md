@@ -143,6 +143,7 @@ xla-def enselble test 11/1:
 | NLP-RAND  | 94      | 97*        | "          |   |
 
 ```py
+# xla-rand only
 {'bert_pretraining.4x4.fp16': 0.8631889763779528,
  'inception_v3_batch_128_train': 0.6839320866141733,
  'mlperf_bert_batch_24_2x2': 0.8222194881889764,
@@ -151,6 +152,7 @@ xla-def enselble test 11/1:
  'tf2_bert_pretrain_dynamic_batch_size': 0.905880905511811,
  'unet_3d.4x4.bf16': 0.5915354330708661}
 
+# xla-rand mixing with nlp-rand
 {'bert_pretraining.4x4.fp16': 0.9277805118110236,
  'inception_v3_batch_128_train': 0.921136811023622,
  'mlperf_bert_batch_24_2x2': 0.9056348425196851,
@@ -158,4 +160,143 @@ xla-def enselble test 11/1:
  'resnet_v1_50_official_batch_128_bf16': 0.6941437007874016,
  'tf2_bert_pretrain_dynamic_batch_size': 0.9251968503937008,
  'unet_3d.4x4.bf16': 0.8567913385826772}
+
+
+ # >>> checkpoint with fixed MixTPU dataset
+ 
+ # config using MixTPU on local
+{
+    'resnet_v1_50_official_batch_128_bf16': 0.9076033464566929,
+    'bert_pretraining.4x4.fp16': 0.9608759842519685,
+    'tf2_bert_pretrain_dynamic_batch_size': 0.952263779527559,
+    'unet_3d.4x4.bf16': 0.88939468503937,
+    'resnet50.4x4.fp16': 0.9650590551181102,
+    'inception_v3_batch_128_train': 0.9472194881889764,
+    'mlperf_bert_batch_24_2x2': 0.9349163385826772
+}
+
+ # config using TPUNpz on local
+ {
+    'resnet_v1_50_official_batch_128_bf16': 0.9076033464566929,
+    'bert_pretraining.4x4.fp16': 0.9608759842519685,
+    'tf2_bert_pretrain_dynamic_batch_size': 0.952386811023622,
+    'unet_3d.4x4.bf16': 0.8916092519685039,
+    'resnet50.4x4.fp16': 0.9650590551181102,
+    'inception_v3_batch_128_train': 0.9472194881889764,
+    'mlperf_bert_batch_24_2x2': 0.9349163385826772
+}
+
+# XLA-Default
+# without mixing xla-random, opa: 0.8001
+{
+    'resnet_v1_50_official_batch_128_bf16': 0.8753292361720808,
+    'bert_pretraining.4x4.fp16': 0.6613292388681729,
+    'tf2_bert_pretrain_dynamic_batch_size': 0.8453947368421053,
+    'resnet50.4x4.fp16': 0.8148310662571303,
+    'inception_v3_batch_128_train': 0.8574561403508771,
+    'mlperf_bert_batch_24_2x2': 0.8622886009224687,
+    'unet_3d.4x4.bf16': 0.6875549692172384,
+}
+
+# with xla-random concat to graph config, opa:0.7832
+{
+    'resnet_v1_50_official_batch_128_bf16': 0.7578947368421053,
+    'bert_pretraining.4x4.fp16': 0.6326754385964912,
+    'tf2_bert_pretrain_dynamic_batch_size': 0.8326754385964912,
+    'resnet50.4x4.fp16': 0.8072368421052631,
+    'inception_v3_batch_128_train': 0.8923245614035088,
+    'mlperf_bert_batch_24_2x2': 0.8392543859649123,
+    'unet_3d.4x4.bf16': 0.7203947368421053,
+}
+
+```
+
+
+```
+XLA-subset model types:
+* CNN
+alexnet_train_batch_32.npz
+efficientnet_b7_eval_batch_1.npz
+inception_v2_batch_128_train.npz
+inception_v2_batch_8_train.npz
+inception_v3_batch_8_train.npz
+inference_mlperf_resnet_batch_16.npz
+inference_mlperf_resnet_batch_256.npz
+inference_mlperf_ssd_1200_batch_128.npz
+inference_mlperf_ssd_1200_batch_1.npz
+inference_mlperf_ssd_1200_batch_2.npz
+mask_rcnn_batch_16_bf16_img1024.npz
+mask_rcnn_batch_4_bf16_img1408.npz
+mask_rcnn_resnet50.4x4.bf16.performance.npz
+mlperf_maskrcnn_1_shard_batch_4.npz
+mlperf_maskrcnn_batch_2.npz
+mlperf_maskrcnn_batch_4.npz
+mlperf_resnet.npz
+mlperf_ssd_1_shard_batch_8_fast_epoch.npz
+mlperf_ssd_2_shard_batch_8_fast_epoch.npz
+mnasnet_a1_batch_128.npz
+mnasnet_b1_batch_128.npz
+resnet50.2x2.fp16.npz
+resnet50.2x2.fp32.npz
+resnet50_3d.2x2.bf16.npz
+resnet50.4x4.bf16.npz
+resnet50.4x4.bf16.performance.npz
+resnet50.8x16.fp16.npz
+resnet50.8x8.fp16.npz
+resnet50.8x8.fp32.npz
+resnet_v1_50_official_batch_128_f32.npz
+resnet_v1_50_official_batch_32_bf16.npz
+resnet_v2_101_batch_128.npz
+resnet_v2_152_batch_128.npz
+resnet_v2_152_batch_64.npz
+resnet_v2_200_batch_32.npz
+resnet_v2_200_batch_64.npz
+resnet_v2_50_batch_128.npz
+resnet_v2_50_batch_16.npz
+retinanet.2x2.fp32.npz
+retinanet.4x4.bf16.performance.npz
+retinanet.4x4.fp32.npz
+shapemask.4x4.fp32.npz  // segmentation
+unet3d.npz
+xception_imagenet.npz
+
+* attention model
+bert_classifier.2x2.fp32.npz
+bert_classifier.2x2.fp32.performance.npz
+bert_pretraining.2x2.fp16.npz
+bert_pretraining.8x16.fp16.npz
+bert_pretraining.8x8.fp32.performance.npz
+bert_squad.2x2.fp32.npz
+mlperf_transformer.npz
+ncf.2x2.fp32.npz   // Neural Collaborative Filtering
+tf2_bert_pretrain_dynamic_sequence_length.npz
+tf2_bert_squad_dynamic.npz
+transformer.2x2.fp32.npz
+transformer.4x4.bf16.npz
+transformer.4x4.fp16.npz
+transformer.4x4.fp32.performance.npz
+transformer_tf2_dynamic_shape.npz
+trax_lsh_attention.npz
+
+* RNN
+brax_es.npz
+magenta_dynamic.npz
+magenta.npz
+mlperf_nmt_1_shard_batch_8.npz
+mlperf_nmt_batch_64.npz
+mlperf_nmt_batch_8.npz
+mlperf_resnet_batch_128_1_shard.npz
+openai_v0_rnn_natural.npz
+openai_v0_rnn_optimized.npz
+```
+
+```py
+pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/05ae41e26dd3c4c06390371a0423233c.pb"  # eff-b7
+pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/5335ed13823b0a518ee3c79ba4425f34.pb"  # eff-b7
+pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/937ee0eb0d5d6151b7b8252933b5c1c9.pb"  # resnet 50
+pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/db59a991b7c607634f13570d52ce885f.pb"  # conv net
+pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/fbaa8bb6a1aed9988281085c91065c05.pb"  # self_suppresion -> nms/(https://github.com/tensorflow/tpu/blob/master/models/official/detection/ops/nms.py)
+pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/cd708819d3f5103afd6460b15e74eaf3.pb"  # MLP
+pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/3e7156ac468dfb75cf5c9615e1e5887d.pb"  # bert
+pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/e8a3a1401b5e79f66d7037e424f3b6df.pb"  # bert_classifier/sentence_prediction
 ```

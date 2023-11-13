@@ -14,6 +14,7 @@ import numpy as np
 import networkx as nx
 import pandas as pd
 import matplotlib.pyplot as plt
+from PIL import Image
 from tqdm import tqdm
 from loguru import logger
 
@@ -210,29 +211,39 @@ def strip_table(ckpt):
 
 def check_mix_dataleak(root_dir):
     from torch_geometric.graphgym.config import cfg, set_cfg
-    from graphgps.loader.dataset.tpu_graphs import MixTPUGraphsNpz
+    from graphgps.loader.dataset.tpu_graphs import MixTPUGraphsNpz, TPUGraphsNpz
     
     set_cfg(cfg)
     # cfg.dataset.extra_cfg_feat_keys = []
     dataset = MixTPUGraphsNpz(root_dir, source='nlp+xla', search='random')
+    xla_dataset = TPUGraphsNpz(root_dir, source='xla', search='random')
+    
     idx_split = dataset.get_idx_split()
     subsets = {}
-    for k, idx in idx_split.items():
-        subsets[k] = dataset[idx]
-    print(idx_split)
+    subsets['train'] = dataset[idx_split['train']]
+    # subsets['valid'] = xla_dataset[xla_dataset.get_idx_split()['valid']]
+    subsets['valid'] = dataset[idx_split['valid_xla_random']]
+    _ = subsets['valid'][0]
+
     
-    subset_graphs = defaultdict(set)
-    for name, subset in subsets.items():
-        for i in tqdm(range(len(subset))):
-            graph_name = subset[i].graph_name
-            graph_name = graph_name.replace('_train', '')
-            graph_name = graph_name.replace('_test', '')
-            graph_name = graph_name.replace('_val', '')
-            subset_graphs[name].add(graph_name)
+    # for k, idx in idx_split.items():
+    #     subsets[k] = dataset[idx]
+    # print(idx_split)
     
-    print('train & valid_xla_random', subset_graphs['train'].intersection(subset_graphs['valid_xla_random']))
-    print('train & valid_nlp_random', subset_graphs['train'].intersection(subset_graphs['valid_nlp_random']))
-    print('train & test', subset_graphs['train'].intersection(subset_graphs['test']))
+    # subset_graphs = defaultdict(set)
+    # for name, subset in subsets.items():
+    #     for i in tqdm(range(len(subset))):
+    #         graph_name = subset[i].graph_name
+    #         graph_name = graph_name.replace('_train', '')
+    #         graph_name = graph_name.replace('_test', '')
+    #         graph_name = graph_name.replace('_val', '')
+    #         subset_graphs[name].add(graph_name)
+    
+    # print('train & valid_xla_random', subset_graphs['train'].intersection(subset_graphs['valid']))
+    
+    # print('train & valid_xla_random', subset_graphs['train'].intersection(subset_graphs['valid_xla_random']))
+    # print('train & valid_nlp_random', subset_graphs['train'].intersection(subset_graphs['valid_nlp_random']))
+    # print('train & test', subset_graphs['train'].intersection(subset_graphs['test']))
 
 
 
@@ -240,10 +251,11 @@ def dataset_sharding(root_dir, part_size=4000):
     from copy import deepcopy
     from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
 
-    dataset = TPUGraphsNpz(root_dir, source='nlp', search='default', task='layout')
+    dataset = TPUGraphsNpz(root_dir, source='xla', search='default', task='layout')
     idx_split = dataset.get_idx_split()
     train_idx = deepcopy(idx_split['train'])
     last_idx = max([max(idx) for idx in idx_split.values()])
+    print("part_size:", part_size)
     input(str(train_idx))
     
     for pt_id in tqdm(train_idx):
@@ -303,6 +315,54 @@ def dataset_sharding(root_dir, part_size=4000):
         dataset.processed_file_names[-1],
     )
     torch.save(idx_split, pt_path)
+
+
+def concat_xla_config(root_dir):
+    from torch_geometric.data import Batch, Data
+    from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
+
+    dataset_def = TPUGraphsNpz(root_dir, source='xla', search='default', task='layout')
+    dataset_rand = TPUGraphsNpz(root_dir, source='xla', search='random', task='layout')
+    
+    name_to_def_id = {}
+    for file in tqdm(dataset_def.processed_file_names):
+        file = os.path.join(dataset_def.processed_dir, file)
+        data = torch.load(file)
+        if isinstance(data, Data):
+            name_to_def_id[data.graph_name] = file
+    
+    name_to_rand_id = {}
+    for file in tqdm(dataset_rand.processed_file_names):
+        file = os.path.join(dataset_rand.processed_dir, file)
+        data = torch.load(file)
+        if isinstance(data, Data):
+            name_to_rand_id[data.graph_name] = file
+    
+    for graph_name, file_path in tqdm(list(name_to_def_id.items())):
+        if graph_name in name_to_rand_id:
+            data_def = torch.load(file_path)
+            data_rand = torch.load(name_to_rand_id[graph_name])
+
+            config_feats_def = data_def.config_feats.view(
+                data_def.num_config, -1, data_def.config_feats.size(-1))
+            config_feats_rand = data_rand.config_feats.view(
+                data_rand.num_config, -1, data_rand.config_feats.size(-1))
+            
+            data_def.config_feats = torch.cat([config_feats_def, config_feats_rand], dim=0)
+            data_def.config_feats = data_def.config_feats.view(-1, data_def.config_feats.size(-1))
+            
+            data_def.y = torch.cat([data_def.y, data_rand.y])
+            data_def.num_config = data_def.num_config + data_rand.num_config
+
+            for key in dataset_def.EXTRA:
+                if hasattr(data_def, key):
+                    cated = torch.cat([
+                        getattr(data_def, key), 
+                        getattr(data_rand, key)
+                    ], dim=0)
+                    setattr(data_def, key, cated)
+            
+            torch.save(data_def, file_path)
 
 
 def insert_graph_id(root_dir, source, search):
@@ -402,7 +462,7 @@ def overwrite(csv_a, csv_b, out_path):
 """
 python3 csv_helper.py merge_csv \
 tests/xla-tile-pe/tpu-tiles-pe/submission_20231009_1696856596.csv \
-tests/results/tpu-pe-fullenc/submission_2023930_1696023638.csv \ 
+tests/results/tpu-pe-fullenc/submission_2023930_1696023638.csv \
 tests/xla-default-sage-fullenc-khop-extra/tpu-khop-extra/test_20231018_1697559303.csv \
 tests/nlp-random-fullenc-ft/tpu-pe-fullenc/submission_20231001_1696152186.csv \
 tests/nlp-default-sage-fullenc-khop-extra/nlp-tpu-khop-extra/test_20231022_1697989360.csv \
@@ -410,11 +470,19 @@ tests/nlp-default-sage-fullenc-khop-extra/nlp-tpu-khop-extra/test_20231022_16979
 
 python3 csv_helper.py merge_csv \
 tests/xla-tile-pe/tpu-tiles-pe/submission_20231009_1696856596.csv \
-tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/test_20231101_1698852920.csv \ 
+tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/test_20231101_1698852920.csv \
 tests/xla-default-sage-fullenc-khop-extra/tpu-khop-extra/test_20231018_1697559303.csv \
 tests/nlp-random-fullgraph-extra-v2/nlp-rand-fullgraph-extra-v2/test_20231103_1699008037.csv \
 tests/nlp-default-sage-fullenc-khop-extra/nlp-tpu-khop-extra/test_20231022_1697989360.csv \
 ~/Downloads/tpu-graph-files/merge_20231107.csv
+
+python3 csv_helper.py merge_csv \
+tests/xla-tile-pe/tpu-tiles-pe/submission_20231009_1696856596.csv \
+tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/test_20231109_1699505166.csv \
+tests/xla-default-extra-v2-full/xla-def-extra-v2-full/test_20231110_1699624497.csv \
+tests/nlp-random-fullgraph-extra-v2/nlp-rand-fullgraph-extra-v2/test_20231103_1699008037.csv \
+tests/xla-default-extra-v2-full/xla-def-extra-v2-full/test_20231110_1699624749.csv \
+~/Downloads/tpu-graph-files/merge_20231111.csv
 """
 def merge_csv(xla_tile, xla_rand, xla_def, nlp_rand, nlp_def, out):
     csvs = [xla_tile, xla_rand, xla_def, nlp_rand, nlp_def]
@@ -587,10 +655,11 @@ def ensemble_raw(pt_files: List[str], out_path: str):
         
 
 def inpsect_dataset(root_dir, field='runtime'):
-    from torch_geometric.graphgym.config import cfg
+    from torch_geometric.graphgym.config import cfg, set_cfg
     from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
+    set_cfg(cfg)
     cfg.dataset.extra_cfg_feat_keys = []
-    dataset = TPUGraphsNpz(root_dir, source='xla', search='random', task='layout')
+    dataset = TPUGraphsNpz(root_dir, source='xla', search='default', task='layout')
     dataset._norm_op_feat = False
     config_feats = []
     code2name = {v: k for k, v in OPCODE.items()}
@@ -598,14 +667,15 @@ def inpsect_dataset(root_dir, field='runtime'):
     for i in tqdm(range(len(dataset))):
         graph = dataset[i]
         logger.info(f'Graph: {graph.graph_name}')
-        if (graph.y < 1e-6).all():
-            logger.warning(f"Skip test-set data that don't have runtime labels.")
-            continue
         
         if field == 'runtime':
+            if (graph.y < 1e-6).all():
+                logger.warning(f"Skip test-set data that don't have runtime labels.")
+                continue
+            
             panels = 4
             plt.subplot(panels, 1, 1)
-            plt.title(graph.graph_name)
+            plt.title(f"{graph.graph_name} - {graph.y.size(0)}")
             plt.hist(graph.y, bins=100)
             
             m = graph.y.size(0)
@@ -644,7 +714,11 @@ def inpsect_dataset(root_dir, field='runtime'):
             m = min(10, num_config)
             for j, single_config in enumerate(config_feats[20: 20+m]):
                 plt.subplot(m, 1, j + 1)
-                plt.imshow(color_map(single_config.int().T))
+                np_img = color_map(single_config.int().T).numpy()
+                img = Image.fromarray(np_img)
+                w, h = img.size
+                img = img.resize((w, h * 4), resample=Image.NEAREST)
+                plt.imshow(img)
             # plt.tight_layout()
             plt.show()
         elif field == 'dup_config':
@@ -729,4 +803,5 @@ if __name__ == '__main__':
         insert_graph_id.__name__: insert_graph_id,
         norm_gt_runtime.__name__: norm_gt_runtime,
         check_mix_dataleak.__name__: check_mix_dataleak,
+        concat_xla_config.__name__: concat_xla_config,
     })

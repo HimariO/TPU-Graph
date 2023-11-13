@@ -569,6 +569,8 @@ class MixTPUGraphsNpz(Dataset):
                 search=b,
                 cache_in_memory=cache_in_memory,
             )
+        self.dataset_weights = [1 if 'nlp' in name else 2 for name in self.dataset_names]
+        
         self.valid_for_train = valid_for_train
         self.custom_split_names = ['train'] 
         self.custom_split_names += [
@@ -630,7 +632,12 @@ class MixTPUGraphsNpz(Dataset):
 
     def get(self, idx):
         if hasattr(self, 'split_name') and 'train' in self.split_name:            
-            i, src_name = random.choice(list(enumerate(self.dataset_names)))
+            # i, src_name = random.choice(list(enumerate(self.dataset_names)))
+            i, src_name = random.choices(
+                list(enumerate(self.dataset_names)), 
+                weights=self.dataset_weights, 
+                k=1
+            )[0]
             src = self.datasets[src_name]
             sub_id = random.randint(0, len(src) - 1)
             graph: Data = src.get(sub_id)

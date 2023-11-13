@@ -215,7 +215,11 @@ def train():
 
     model = LitAutoEncoder(feat_dim=(1805 + 128), emb_dim=128)
     
-    train_dataset = TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/*/*/train")
+    train_dataset = torch.utils.data.ConcatDataset([
+        TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/*/*/train"),
+        TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/*/*/test"),
+        TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/*/*/valid"),
+    ])
     val_dataset = TPUGraphNode("/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/raw/npz/layout/xla/random/valid")
     train_loader = DataLoader(
         train_dataset, 
@@ -284,6 +288,6 @@ if __name__ == '__main__':
     # test_dataset()
     # train()
     insert_node_feature(
-        "datasets/TPUGraphsNpz/processed/xla_default_data_*.pt", 
-        "feat-encoder.ckpt",
+        "datasets/TPUGraphsNpz/processed/*_*_data_*.pt", 
+        "feat-encoder-v2.ckpt",
     )

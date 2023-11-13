@@ -24,13 +24,19 @@ class PerformerWrapper(torch.nn.Module):
             dropout=dropout,
             causal=False
         )
+        self.norm1 = torch.nn.BatchNorm1d(dim_h)
         self.norm2 = torch.nn.BatchNorm1d(dim_h)
+        self.dropout = torch.nn.Dropout(p=cfg.gnn.dropout)
     
     def forward(self, batch):
         h = batch.x
+        batch.x = self.norm1(batch.x)
+        batch.x = self.dropout(batch.x)
+
         batch = self.conv_layer(batch)
         h_dense, mask = to_dense_batch(h, batch.batch)
         h_attn = self.attn(h_dense, mask=mask)[mask]
+        
         batch.x = self.norm2(batch.x + h_attn + h)
         return batch
 
@@ -87,7 +93,7 @@ class CustomTpuGNN(torch.nn.Module):
         for _ in range(cfg.gnn.layers_mp):
             layers.append(conv_model(layer_cfg))
             if len(layer_type) > 1 and layer_type[1] == 'performer':
-                layers[-1] = PerformerWrapper(layers[-1], dim_in, 4, 0.5)
+                layers[-1] = PerformerWrapper(layers[-1], dim_in, 4, 0.2)
         self.gnn_layers = torch.nn.Sequential(*layers)
 
         GNNHead = register.head_dict[cfg.gnn.head]
