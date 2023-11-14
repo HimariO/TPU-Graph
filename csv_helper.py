@@ -247,7 +247,7 @@ def check_mix_dataleak(root_dir):
 
 
 
-def dataset_sharding(root_dir, part_size=4000):
+def dataset_sharding(root_dir, part_size=15000):
     from copy import deepcopy
     from graphgps.loader.dataset.tpu_graphs import TPUGraphsNpz
 
@@ -483,6 +483,14 @@ tests/xla-default-extra-v2-full/xla-def-extra-v2-full/test_20231110_1699624497.c
 tests/nlp-random-fullgraph-extra-v2/nlp-rand-fullgraph-extra-v2/test_20231103_1699008037.csv \
 tests/xla-default-extra-v2-full/xla-def-extra-v2-full/test_20231110_1699624749.csv \
 ~/Downloads/tpu-graph-files/merge_20231111.csv
+
+python3 csv_helper.py merge_csv \
+tests/xla-tile/tpu-tiles/test_20231114_1699968183.csv \
+tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/test_20231109_1699505166.csv \
+tests/xla-default-extra-v2-full/xla-def-extra-v2-full/test_20231110_1699624497.csv \
+tests/nlp-random-fullgraph-extra-v2/nlp-rand-fullgraph-extra-v2/test_20231103_1699008037.csv \
+tests/xla-default-extra-v2-full/xla-def-extra-v2-full/test_20231110_1699624749.csv \
+~/Downloads/tpu-graph-files/merge_20231114.csv
 """
 def merge_csv(xla_tile, xla_rand, xla_def, nlp_rand, nlp_def, out):
     csvs = [xla_tile, xla_rand, xla_def, nlp_rand, nlp_def]
@@ -710,6 +718,7 @@ def inpsect_dataset(root_dir, field='runtime'):
             num_config = graph.num_config
             config_nodes = graph.num_config_idx
             config_feats = graph.config_feats.view(num_config, config_nodes, -1)
+            logger.info(f"num_config: {num_config}")
             
             m = min(10, num_config)
             for j, single_config in enumerate(config_feats[20: 20+m]):

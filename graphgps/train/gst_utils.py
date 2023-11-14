@@ -292,10 +292,13 @@ class TPUModel(torch.nn.Module):
             self.reg_offset = nn.Parameter(torch.zeros(1, requires_grad=True))
         
         self.graph_embed_dims = graph_embed_dims
-        if graph_embed_dims == 1:
-            self.history = History(500, 1)
+        if not cfg.train.gst.sample_full_graph:
+            if graph_embed_dims == 1:
+                self.history = History(500, 1)
+            else:
+                self.history = History(14_000_000, graph_embed_size)
         else:
-            self.history = History(14_000_000, graph_embed_size)
+            self.history = None
         
         m = 2 if pair_rank else 1
         if enc_config:
@@ -321,6 +324,13 @@ class TPUModel(torch.nn.Module):
         self.input_feat_key = input_feat_key
         self.enc_config = enc_config
         self.enc_tile_config = enc_tile_config
+
+        if cfg.gnn.avgmax_pooling == 'cat':
+            self.avgmax_pooling = nn.Sequential(
+                nn.Linear(cfg.gnn.dim_inner * 2, cfg.gnn.dim_inner),
+                nn.ReLU(),
+                nn.BatchNorm1d(cfg.gnn.dim_inner),
+            )
     
     def fourier_enc(self, ten: Tensor, scales=[-1, 0, 1, 2, 3, 4, 5, 6]) -> Tensor:
         """
@@ -386,8 +396,20 @@ class TPUModel(torch.nn.Module):
             for i, module in enumerate(custom_gnn.children()):
                 if i < module_len - 1:
                     batch = module(batch)
-            batch_embed = tnn.global_max_pool(batch.x, batch.batch) \
-                            + tnn.global_mean_pool(batch.x, batch.batch)
+            
+            if cfg.gnn.avgmax_pooling == 'sum':
+                batch_embed = tnn.global_max_pool(batch.x, batch.batch) \
+                                + tnn.global_mean_pool(batch.x, batch.batch)
+            else:
+                batch_embed = self.avgmax_pooling(
+                    torch.cat([
+                            tnn.global_max_pool(batch.x, batch.batch),
+                            tnn.global_mean_pool(batch.x, batch.batch)
+                        ],
+                        dim=-1
+                    )
+                )
+
         
         if cfg.gnn.post_mp_norm:
             graph_embed = batch_embed / torch.norm(batch_embed, dim=-1, keepdim=True)

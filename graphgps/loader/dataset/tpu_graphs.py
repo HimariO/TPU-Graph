@@ -308,10 +308,12 @@ class TPUGraphsNpz(Dataset):
         self.epoch_multiply = 1
         self.cache_in_memory = cache_in_memory
         self._cache = {}
-        self._cache_limit = 80
+        self._cache_limit = 8000
         self._norm_op_feat = False
         super().__init__(root, transform, pre_transform, pre_filter)
         if self.cache_in_memory:
+            # for i in tqdm(range(len(self)), desc='Pre-Caching'):
+            #     self[i]
             self.meta
         self.data = Data(
             edge_index=None,
@@ -509,7 +511,7 @@ class TPUGraphsNpz(Dataset):
                     delattr(data, key)
             
             if self.cache_in_memory and len(self._cache) < self._cache_limit:
-                self._cache[idx] = copy.deepcopy(data).share_memory_()
+                self._cache[idx] = copy.deepcopy(data) #.share_memory_()
         
         data.config_feats = data.config_feats.float()
         data.source_dataset = f"{self.source}-{self.search}-{idx}" if self.task == 'layout' else f"xla-tile-{idx}"
@@ -632,12 +634,12 @@ class MixTPUGraphsNpz(Dataset):
 
     def get(self, idx):
         if hasattr(self, 'split_name') and 'train' in self.split_name:            
-            # i, src_name = random.choice(list(enumerate(self.dataset_names)))
-            i, src_name = random.choices(
-                list(enumerate(self.dataset_names)), 
-                weights=self.dataset_weights, 
-                k=1
-            )[0]
+            i, src_name = random.choice(list(enumerate(self.dataset_names)))
+            # i, src_name = random.choices(
+            #     list(enumerate(self.dataset_names)), 
+            #     weights=self.dataset_weights, 
+            #     k=1
+            # )[0]
             src = self.datasets[src_name]
             sub_id = random.randint(0, len(src) - 1)
             graph: Data = src.get(sub_id)
