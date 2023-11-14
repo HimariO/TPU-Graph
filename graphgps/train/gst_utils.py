@@ -294,11 +294,11 @@ class TPUModel(torch.nn.Module):
         self.graph_embed_dims = graph_embed_dims
         if not cfg.train.gst.sample_full_graph:
             if graph_embed_dims == 1:
-                self.history = History(500, 1)
+                self.history = History(500_000_000, 1)
             else:
                 self.history = History(14_000_000, graph_embed_size)
         else:
-            self.history = None
+            self.history = History(1, 1)
         
         m = 2 if pair_rank else 1
         if enc_config:

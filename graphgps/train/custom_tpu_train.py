@@ -498,7 +498,8 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
             if cfg.train.enable_ckpt and cfg.train.ckpt_best and \
                     best_epoch == len(val_perf) - 1:
                 src_w = model.state_dict()
-                src_w.pop('history.emb')
+                if 'history.emb' in src_w:
+                    src_w.pop('history.emb')
                 # save_ckpt(CheckpointWrapper(src_w), optimizer, scheduler, cur_epoch)
                 ckpt_path = os.path.join(cfg.run_dir, f'best-{cur_epoch}.ckpt')
                 torch.save({"model_state": src_w}, ckpt_path)
