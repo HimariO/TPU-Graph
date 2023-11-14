@@ -417,6 +417,11 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
 
     num_splits = len(loggers)
     split_names = [loader.dataset.split_name for loader in loaders]
+    val_split_id = [(name, i) for i, name in enumerate(split_names) if 'val' in name.lower()]
+    val_split_id = sorted(val_split_id, key=lambda x: 'xla' not in x[0].lower())
+    val_split_id = val_split_id[0][1]
+    ulogger.warning(f'Watch split: {val_split_id}, {split_names[val_split_id]}')
+    
     # split_names = ['val', 'test']
     full_epoch_times = []
     perf = [[] for _ in range(num_splits)]
@@ -444,7 +449,7 @@ def custom_train(loggers, loaders, model: TPUModel, optimizer, scheduler):
                 perf[i].append(perf[i][-1])
 
         first_run_epoch = False
-        val_perf = perf[1]
+        val_perf = perf[val_split_id]
         if cfg.optim.scheduler == 'reduce_on_plateau':
             scheduler.step(val_perf[-1]['loss'])
         else:
