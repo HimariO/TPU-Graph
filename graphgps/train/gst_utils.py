@@ -285,7 +285,7 @@ class TPUModel(torch.nn.Module):
         self.emb = nn.Embedding(128, 128, max_norm=True)
         self.linear_map = nn.Linear(286, 128, bias=True)
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
-        self.config_weights = nn.Parameter(torch.ones(1, 18, requires_grad=True) * 100)
+        self.config_weights = nn.Parameter(torch.ones(1, cfg.gnn.cfg_feat_dim, requires_grad=True) * 100)
         
         if regression:
             self.reg_scale = nn.Parameter(torch.ones(1, requires_grad=True))
@@ -330,6 +330,13 @@ class TPUModel(torch.nn.Module):
                 nn.Linear(cfg.gnn.dim_inner * 2, cfg.gnn.dim_inner),
                 nn.ReLU(),
                 nn.BatchNorm1d(cfg.gnn.dim_inner),
+            )
+        
+        if cfg.gnn.late_fuse:
+            self.fuse_config = nn.Linear(
+                cfg.gnn.cfg_feat_dim + cfg.gnn.dim_inner, 
+                cfg.gnn.dim_inner, 
+                bias=True
             )
     
     def fourier_enc(self, ten: Tensor, scales=[-1, 0, 1, 2, 3, 4, 5, 6]) -> Tensor:
@@ -379,10 +386,12 @@ class TPUModel(torch.nn.Module):
                 config_feats,
             ], dim=-1)
             batch.x = self.linear_map(batch.x)
+            batch.post_cfg_feat = config_feats
         else:
+            batch.post_cfg_feat = config_feats * self.config_weights if cfg.gnn.cfg_feat_reweight else config_feats
             batch.x = torch.cat([
                 getattr(batch, self.input_feat_key),
-                config_feats,
+                batch.post_cfg_feat,
             ], dim=-1)
         return batch
 
@@ -397,6 +406,10 @@ class TPUModel(torch.nn.Module):
                 if i < module_len - 1:
                     batch = module(batch)
             
+            if cfg.gnn.late_fuse:
+                batch.x = torch.cat([batch.x, batch.post_cfg_feat], dim=-1)
+                batch.x = self.fuse_config(batch.x)
+
             if cfg.gnn.avgmax_pooling == 'sum':
                 batch_embed = tnn.global_max_pool(batch.x, batch.batch) \
                                 + tnn.global_mean_pool(batch.x, batch.batch)
@@ -410,7 +423,6 @@ class TPUModel(torch.nn.Module):
                     )
                 )
 
-        
         if cfg.gnn.post_mp_norm:
             graph_embed = batch_embed / torch.norm(batch_embed, dim=-1, keepdim=True)
         else:

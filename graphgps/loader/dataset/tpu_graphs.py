@@ -184,7 +184,7 @@ class IntervalSampler(BasicSampler):
     def resample(self, graph: Data, num_sample_configs: int) -> Tuple[Tensor]:
         all_zero = (graph.y < 1e-9).all()
         pad_mask = torch.zeros([num_sample_configs], dtype=torch.bool)
-        if all_zero or random.random() < 0.66:  # runtime can't be sort
+        if all_zero or random.random() < 0.8:  # runtime can't be sort
             return super().resample(graph, num_sample_configs)
         
         ind = f"{graph.graph_name}_{graph.source_dataset}"

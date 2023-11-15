@@ -16,3 +16,6 @@ def custom_gnn_cfg(cfg):
     cfg.gnn.dim_out = 1
     cfg.gnn.post_mp_norm = True
     cfg.gnn.avgmax_pooling = 'sum'
+    cfg.gnn.cfg_feat_dim = 18
+    cfg.gnn.cfg_feat_reweight = False
+    cfg.gnn.late_fuse = False
