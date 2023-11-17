@@ -1,4 +1,4 @@
-out_dir: tests/mix-default-fullgraph-extra-v2-xl-3
+out_dir: tests/mix-all-fullgraph-extra-v2-xl
 num_workers: 8
 num_threads: 16
 prefetch_factor: 4
@@ -15,8 +15,8 @@ dataset:
   transductive: False
   dir: datasets/
   source: xla+nlp
-  search: default
-  num_sample_config: 48
+  search: default  # random is concated to default
+  num_sample_config: 32
   eval_num_sample_config: 96
   input_feat_key: op_feat_enc_i
   cache_in_memory: false
@@ -27,12 +27,13 @@ dataset:
   # config_sampler: IntervalSampler
   extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
   extra_cfg_feat_dims: 316
+  valid_for_train: ['nlp_default']  # !
 
 train:
   mode: custom_tpu
   batch_size: 2
-  eval_period: 1
-  ckpt_period: 2
+  eval_period: 8
+  ckpt_period: 8
   sampler: full_batch
   auto_resume: true
   adap_margin: false
@@ -47,30 +48,26 @@ gnn:
   layers_pre_mp: 2
   layers_mp: 3
   layers_post_mp: 3
-  dim_inner: 256
-  layer_type: sageconvlayer # no BN ver
+  dim_inner: 512
+  layer_type: sageconv
   stage_type: skipsum
   batchnorm: False
   act: prelu
   dropout: 0.1
   agg: mean
   normalize_adj: False
-  enc_config: true # <<
+  enc_config: true
   freeze_body: false
-  dim_feat_enc: 224  # ? 
-  post_mp_norm: true # <<
+  dim_feat_enc: 192
+  post_mp_norm: false
   avgmax_pooling: cat
-  cfg_feat_dim: 64 # ? 
-  cfg_feat_reweight: true # <<
-  late_fuse: true # <<
-  force_op_emb: true # <<
 optim:
   optimizer: adam
-  base_lr: 0.0001
-  max_epoch: 200
-  batch_accumulation: 2
+  base_lr: 0.00002 # !
+  max_epoch: 100
+  batch_accumulation: 4
 share:
   dim_in: 286
 device: cuda
-seed: 20
-# model_ckpt: tests/mix-random-fullgraph-extra-v2/random-full-extra-v2-gcp/20/best-3.ckpt
+seed: 22
+# model_ckpt: tests/mix-all-fullgraph-extra-v2-xl/all-full-extra-v2-gcp-xl/21/ckpt/57.strip.ckpt

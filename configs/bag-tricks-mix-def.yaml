@@ -1,10 +1,10 @@
 out_dir: tests/mix-default-fullgraph-extra-v2-xl-3
-num_workers: 8
+num_workers: 0
 num_threads: 16
 prefetch_factor: 4
 debug: false
 wandb:
-  use: true
+  use: false
   entity: togglec
   project: tpu-graph-v2
 dataset:
@@ -14,7 +14,7 @@ dataset:
   task_type: ranking
   transductive: False
   dir: datasets/
-  source: xla+nlp
+  source: nlp
   search: default
   num_sample_config: 48
   eval_num_sample_config: 96
@@ -29,7 +29,9 @@ dataset:
   extra_cfg_feat_dims: 316
 
 train:
-  mode: custom_tpu
+  mode: inference-tpu
+  # mode: valid-tpu
+  # mode: custom_tpu
   batch_size: 2
   eval_period: 1
   ckpt_period: 2
@@ -73,4 +75,4 @@ share:
   dim_in: 286
 device: cuda
 seed: 20
-# model_ckpt: tests/mix-random-fullgraph-extra-v2/random-full-extra-v2-gcp/20/best-3.ckpt
+model_ckpt: xla-nlp-default-hfoi21id-66.ckpt

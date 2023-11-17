@@ -11,6 +11,7 @@ from typing import *
 
 import numpy as np
 import torch
+from loguru import logger
 from tqdm import tqdm
 from torch import Tensor
 from torch_geometric.data import (
@@ -571,7 +572,9 @@ class MixTPUGraphsNpz(Dataset):
                 search=b,
                 cache_in_memory=cache_in_memory,
             )
-        self.dataset_weights = [1 if 'nlp' in name else 2 for name in self.dataset_names]
+        self.dataset_weights = [1 if 'val' in name else 2 for name in self.dataset_names]
+        _wmap = {k: v for k, v in zip(self.dataset_names, self.dataset_weights)}
+        logger.info(f"dataset_weights: {_wmap}")
         
         self.valid_for_train = valid_for_train
         self.custom_split_names = ['train'] 
@@ -581,6 +584,7 @@ class MixTPUGraphsNpz(Dataset):
             if v not in self.valid_for_train
         ]
         self.custom_split_names += ['test']  # for split_generator.py
+        logger.info(f"dataset_weights: {self.custom_split_names}")
         super().__init__(root, transform, pre_transform, pre_filter)
         
         # HACK: dummy for passing graphgps dataset check
@@ -633,19 +637,23 @@ class MixTPUGraphsNpz(Dataset):
         raise IndexError(f"{idx} isn't a valid index in a dataset of size {len(self)}")
 
     def get(self, idx):
-        if hasattr(self, 'split_name') and 'train' in self.split_name:            
-            i, src_name = random.choice(list(enumerate(self.dataset_names)))
-            # i, src_name = random.choices(
-            #     list(enumerate(self.dataset_names)), 
-            #     weights=self.dataset_weights, 
-            #     k=1
-            # )[0]
-            src = self.datasets[src_name]
-            sub_id = random.randint(0, len(src) - 1)
-            graph: Data = src.get(sub_id)
-            if hasattr(graph, 'partition_idx'):
-                segment_offset = self.segment_offsets[i]
-                graph.partition_idx += segment_offset
+        if hasattr(self, 'split_name') and 'train' in self.split_name:
+            if not self.valid_for_train:
+                # i, src_name = random.choice(list(enumerate(self.dataset_names)))
+                i, src_name = random.choices(
+                    list(enumerate(self.dataset_names)), 
+                    weights=self.dataset_weights, 
+                    k=1
+                )[0]
+                src = self.datasets[src_name]
+                sub_id = random.randint(0, len(src) - 1)
+                graph: Data = src.get(sub_id)
+
+                if hasattr(graph, 'partition_idx'):
+                    segment_offset = self.segment_offsets[i]
+                    graph.partition_idx += segment_offset
+            else:
+                graph: Data = self._get(idx)
             return graph
         else:
             return self._get(idx)
@@ -655,6 +663,7 @@ class MixTPUGraphsNpz(Dataset):
             self._split_idxs = defaultdict(list)
             start_indies = [0] + list(accumulate(len(self.datasets[k]) for k in self.dataset_names[:-1]))
             start_indies = { k: v for k, v in zip(self.dataset_names, start_indies) }
+            val_for_train_idx = []
             
             for name, dataset in self.datasets.items():
                 offset = start_indies[name]
@@ -662,11 +671,18 @@ class MixTPUGraphsNpz(Dataset):
                     off_idx = [j + offset for j in idx]
                     if split == 'valid':
                         if name in self.valid_for_train:
-                            self._split_idxs[f"train"] += off_idx
+                            val_for_train_idx += off_idx
                         else:
                             self._split_idxs[f"valid_{name}"] = off_idx
                     else:
                         self._split_idxs[split] += off_idx
+            
+            if val_for_train_idx:
+                val_size = len(val_for_train_idx)
+                full_train = self._split_idxs['train']
+                random.shuffle(full_train)
+                logger.warning(f"Remixing train dataset [{len(full_train)}] with val set[{val_size}] for training")
+                self._split_idxs['train'] = val_for_train_idx + full_train[:val_size * 5]
         return self._split_idxs
 
 

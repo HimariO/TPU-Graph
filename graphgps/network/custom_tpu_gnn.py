@@ -47,14 +47,14 @@ class SAGEConvLayer(torch.nn.Module):
         super().__init__()
         self.model = pyg.nn.SAGEConv(layer_config.dim_in, layer_config.dim_out,
                                      bias=layer_config.has_bias)
-        self.norm = torch.nn.BatchNorm1d(layer_config.dim_in)
+        # self.norm = torch.nn.BatchNorm1d(layer_config.dim_in)
         self.drop_prob = cfg.gnn.dropout
         self.residual = cfg.gnn.residual
         self.dropout = torch.nn.Dropout(p=cfg.gnn.dropout)
 
     def forward(self, batch):
         x_in = batch.x
-        batch.x = self.norm(batch.x)
+        # batch.x = self.norm(batch.x)
         if self.drop_prob > 0:
             batch.x = self.dropout(batch.x)
         batch.x = self.model(batch.x, batch.edge_index)

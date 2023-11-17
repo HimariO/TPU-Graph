@@ -202,9 +202,13 @@ def draw_graph(graph_file):
 
 def strip_table(ckpt):
     checkpoint = torch.load(ckpt)
-    # print(checkpoint.keys())
+    print('src: ', checkpoint.keys())
     # breakpoint()
+    if 'scheduler_state' in checkpoint:
+        checkpoint.pop('scheduler_state')
     checkpoint['model_state'].pop('history.emb')
+    
+    print('out: ', checkpoint.keys())
     output = ckpt.replace('.ckpt', '.strip.ckpt')
     torch.save(checkpoint, output)
 
@@ -491,6 +495,14 @@ tests/xla-default-extra-v2-full/xla-def-extra-v2-full/test_20231110_1699624497.c
 tests/nlp-random-fullgraph-extra-v2/nlp-rand-fullgraph-extra-v2/test_20231103_1699008037.csv \
 tests/xla-default-extra-v2-full/xla-def-extra-v2-full/test_20231110_1699624749.csv \
 ~/Downloads/tpu-graph-files/merge_20231114.csv
+
+python3 csv_helper.py merge_csv \
+tests/xla-tile/tpu-tiles/test_20231114_1699968183.csv \
+tests/xla-random-extra-v2-full/xla-rand-extra-v2-full/test_20231109_1699505166.csv \
+tests/xla-default-extra-v2-full/xla-def-extra-v2-full/test_20231110_1699624497.csv \
+tests/nlp-random-fullgraph-extra-v2/nlp-rand-fullgraph-extra-v2/test_20231103_1699008037.csv \
+nlp_def_ensem.csv \
+~/Downloads/tpu-graph-files/merge_20231116.csv
 """
 def merge_csv(xla_tile, xla_rand, xla_def, nlp_rand, nlp_def, out):
     csvs = [xla_tile, xla_rand, xla_def, nlp_rand, nlp_def]
@@ -640,9 +652,9 @@ def ensemble_raw(pt_files: List[str], out_path: str):
         vmax = np.max(score_mtx, axis=1, keepdims=True)
         score_mtx -= vmin
         score_mtx /= vmax - vmin
-        merge_score = ranky.pairwise(score_mtx.T)
+        # merge_score = ranky.pairwise(score_mtx.T)
         # merge_score = ranky.kemeny_young(score_mtx.T, workers=16)
-        # merge_score = score_mtx.mean(axis=0)
+        merge_score = score_mtx.mean(axis=0)
         # print('-' * 100)
         # print(score_mtx)
         # print(merge_score)

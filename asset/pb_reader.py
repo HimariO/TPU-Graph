@@ -143,7 +143,38 @@ def estimate_shape(
 
 def single_file_eda():
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/train/inference_mlperf_ssd_1200_batch_1.pb"
-    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/resnet_v1_50_official_batch_128_bf16.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/resnet_v1_50_official_batch_128_bf16.pb"
+    pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/bert_pretraining.4x4.fp16.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/train/transformer.4x4.fp16.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/train/ncf.2x2.fp32.pb"
+    
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/05ae41e26dd3c4c06390371a0423233c.pb"  # eff-b7
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/5335ed13823b0a518ee3c79ba4425f34.pb"  # eff-b7
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/cd708819d3f5103afd6460b15e74eaf3.pb"  # MLP
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/e8a3a1401b5e79f66d7037e424f3b6df.pb"  # bert_classifier/sentence_prediction
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/3e7156ac468dfb75cf5c9615e1e5887d.pb"  # bert
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/937ee0eb0d5d6151b7b8252933b5c1c9.pb"  # resnet 50
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/db59a991b7c607634f13570d52ce885f.pb"  # conv net
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/fbaa8bb6a1aed9988281085c91065c05.pb"  # self_suppresion -> nms/(https://github.com/tensorflow/tpu/blob/master/models/official/detection/ops/nms.py)
+        
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/016ac66a44a906a695afd2228509046a.pb"  # 8 layer bert, batch 64, hidden 128
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/171b0513d8874a427ccfa46d136fbadc.pb"  # 12 layer bert, 768
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/23559853d9702baaaacbb0c83fd32266.pb"  # 4 layer bert encoder
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/29886a50d55cfe77a9497bc906c76ce9.pb"  # 4 layer bert
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/32531d07a084b319dce484f53a4cf3fc.pb"  # 4 layer bert 512
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/38524e2ff135ded55b5286407e7af6b7.pb"  # 12 layer bert, 8-768
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/3a0c5517a87df8d82fd637b83298a3ba.pb"  # 24 layer transformer (tfm.nlp.networks.EncoderScaffold)
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/492c7a94d559aa4a88769142d2a68362.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/58cc2e418c3a8a19b871e15964b534ad.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/60880ed76de53f4d7a1b960b24f20f7d.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/6c1101f6231f4d1722c3b9f6d1e25026.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/7105451001e119f65b66570d170b94a8.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/71b79ca6db513e7979c3702c595150c2.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/7f6284ebe027b1e9a3850fc703858a59.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/b2fdde3b72980907578648774101543e.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/d15316c12eefdef1ba549eb433797f77.pb"
+    # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/test/f6c146fc5cf10be4f3accbaca9897311.pb"
+    
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/bert_multi_cased_L-12_H-768_A-12_batch_size_16_train.pb"
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/valid/albert_en_xlarge_batch_size_16_test.pb"
     # pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/valid/unet_3d.4x4.bf16.pb"
@@ -168,7 +199,7 @@ def single_file_eda():
                     inst_chds[chd].append(inst.id)
 
         tunable = [
-            # 'dot',
+            'dot',
             # 'reshape',
             'convolution'
         ]
@@ -177,7 +208,7 @@ def single_file_eda():
             print(colored('*', color='green'), comp.name)
             # print(colored('*', color='green'), comp.program_shape)
             for inst in comp.instructions:
-                if inst.opcode in tunable:
+                if inst.opcode in tunable and "gradie" not in inst.metadata.op_name:
                     print(colored('>>  ==  --', color='yellow'))
                     print(inst)
                     print("inst.outfeed_shape: ", inst.outfeed_shape, inst.shape.element_type)
@@ -289,9 +320,9 @@ def process_graph(data_src, skip=-1):
 
 @logger.catch(reraise=True)
 def create_dataset_feature(pt_glob, pb_dir, debug=False):
-    logger.info(f'Scanning files in source folder: {pt_glob}')
     data_src = defaultdict(dict)
     pt_files = glob.glob(pt_glob, recursive=True)
+    logger.info(f'Scanning files in source folder: {pt_glob}, {len(pt_files)}')
     for path in pt_files:
         graph_name = torch.load(path).graph_name
         data_src[graph_name]['pt'] = path
@@ -336,18 +367,27 @@ if __name__ == '__main__':
     import time
     warnings.filterwarnings('ignore')
 
-    # single_file_eda()
+    single_file_eda()
     # create_dataset_feature(
     #     "/home/ron_zhu/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
     #     "/home/ron_zhu/data/tpugraphs/pb/pb/layout/xla/default/"
     # )
-    create_dataset_feature(
-        "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
-        "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/"
-    )
+
+    # create_dataset_feature(
+    #     "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_default*data*.pt",
+    #     "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/"
+    # )
+    # create_dataset_feature(
+    #     "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/xla_random*data*.pt",
+    #     "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/random/"
+    # )
     # create_dataset_feature(
     #     "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/nlp_default*data*.pt",
     #     "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/default/"
+    # )
+    # create_dataset_feature(
+    #     "/home/ron/Projects/TPU-Graph/datasets/TPUGraphsNpz/processed/nlp_random*data*.pt",
+    #     "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/nlp/random/"
     # )
 
     # print(ReadEstimatorV1.conv_read_ops([2,24,24,24,64], [4,3,2,1,0], spatial_dims=[1,2,3], kernel_size=[2,2,2]))

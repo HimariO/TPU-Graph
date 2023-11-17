@@ -14,7 +14,7 @@ dataset:
   transductive: False
   dir: datasets/
   source: nlp+xla
-  search: random
+  search: default
   num_sample_config: 16
   eval_num_sample_config: 128
   input_feat_key: op_feat_enc_i
@@ -26,10 +26,12 @@ dataset:
   # config_sampler: IntervalSampler
   extra_cfg_feat_keys: ["extra_feat", "extra_read_ops_feat"]
   extra_cfg_feat_dims: 316
+  valid_for_train: ['nlp_default']  # !
 
 train:
   # mode: valid-tpu
-  mode: inference-tpu
+  # mode: inference-tpu
+  mode: custom_tpu
   batch_size: 4
   eval_period: 32
   ckpt_period: 100
@@ -46,8 +48,8 @@ model:
 gnn:
   layers_pre_mp: 1
   layers_mp: 3
-  layers_post_mp: 2
-  dim_inner: 256
+  layers_post_mp: 3
+  dim_inner: 512
   layer_type: sageconvlayer
   stage_type: skipsum
   batchnorm: False
@@ -58,7 +60,12 @@ gnn:
   normalize_adj: False
   enc_config: true
   freeze_body: false
-  dim_feat_enc: 192
+  dim_feat_enc: 224
+  avgmax_pooling: cat
+  cfg_feat_dim: 64 # ? 
+  cfg_feat_reweight: true # <<
+  late_fuse: true # <<
+  force_op_emb: true # <<
 optim:
   optimizer: adam
   base_lr: 0.0001

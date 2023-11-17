@@ -282,7 +282,7 @@ class TPUModel(torch.nn.Module):
         ):
         super().__init__()
         self.model = model
-        self.emb = nn.Embedding(128, 128, max_norm=True)
+        self.emb = nn.Embedding(128, 32 if cfg.gnn.force_op_emb else 128, max_norm=True)
         self.linear_map = nn.Linear(286, 128, bias=True)
         self.op_weights = nn.Parameter(torch.ones(1,1,requires_grad=True) * 100)
         self.config_weights = nn.Parameter(torch.ones(1, cfg.gnn.cfg_feat_dim, requires_grad=True) * 100)
@@ -308,8 +308,8 @@ class TPUModel(torch.nn.Module):
             )
         if enc_tile_config:
             self.config_map = nn.Sequential(
-                nn.Linear(336, 64, bias=True),
-                nn.BatchNorm1d(64),
+                nn.Linear(336 * (m + int(m > 1)), 64 * m, bias=True),
+                nn.BatchNorm1d(64 * m),
             )
         
         self.extra_cfg_feat_keys = extra_cfg_feat_keys
@@ -333,10 +333,11 @@ class TPUModel(torch.nn.Module):
             )
         
         if cfg.gnn.late_fuse:
-            self.fuse_config = nn.Linear(
-                cfg.gnn.cfg_feat_dim + cfg.gnn.dim_inner, 
-                cfg.gnn.dim_inner, 
-                bias=True
+            self.fuse_config = nn.Sequential(
+                nn.Linear(cfg.gnn.cfg_feat_dim + cfg.gnn.dim_inner,  cfg.gnn.dim_inner),
+                nn.ReLU(),
+                nn.BatchNorm1d(cfg.gnn.dim_inner),
+                nn.Linear(cfg.gnn.dim_inner,  cfg.gnn.dim_inner),
             )
     
     def fourier_enc(self, ten: Tensor, scales=[-1, 0, 1, 2, 3, 4, 5, 6]) -> Tensor:
@@ -393,6 +394,11 @@ class TPUModel(torch.nn.Module):
                 getattr(batch, self.input_feat_key),
                 batch.post_cfg_feat,
             ], dim=-1)
+        
+        if cfg.gnn.force_op_emb:
+            op_emb = self.emb(batch.op_code.long())
+            batch.x = torch.cat([batch.x, op_emb * self.op_weights,], dim=-1)
+        
         return batch
 
     def forward_segment(self, batch: Batch, freeze_body=False):

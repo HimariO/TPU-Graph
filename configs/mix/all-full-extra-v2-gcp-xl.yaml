@@ -68,5 +68,5 @@ optim:
 share:
   dim_in: 286
 device: cuda
-seed: 20
-# model_ckpt: tests/mix-random-fullgraph-extra-v2/random-full-extra-v2-gcp/20/best-3.ckpt
+seed: 21
+# model_ckpt: tests/mix-all-fullgraph-extra-v2-xl/all-full-extra-v2-gcp-xl/20/ckpt/87.strip.ckpt

@@ -13,7 +13,7 @@ dataset:
   task_type: ranking
   transductive: False
   dir: datasets/
-  source: xla
+  source: nlp
   search: default
   num_sample_config: 16
   eval_num_sample_config: 96
@@ -28,8 +28,8 @@ dataset:
   extra_cfg_feat_dims: 316
 
 train:
-  mode: valid-tpu
-  # mode: inference-tpu
+  # mode: valid-tpu
+  mode: inference-tpu
   batch_size: 4
   eval_period: 32
   ckpt_period: 100
@@ -52,7 +52,7 @@ gnn:
   layers_pre_mp: 1
   layers_mp: 3
   layers_post_mp: 2
-  dim_inner: 256
+  dim_inner: 512
   layer_type: sageconv
   stage_type: skipsum
   batchnorm: False
@@ -63,7 +63,7 @@ gnn:
   enc_config: true
   freeze_body: false
   dim_feat_enc: 192
-  # post_mp_norm: false
+  post_mp_norm: false
 optim:
   optimizer: adam
   base_lr: 0.0001
@@ -73,5 +73,8 @@ share:
   dim_in: 286
 device: cuda
 seed: 0
-model_ckpt: nlp-xla-default-xse9mvyf-71.ckpt
+
+model_ckpt: xla-nlp-default-b0dvrbj6-71.ckpt
+# model_ckpt: tests/mix-default-fullgraph-extra-v2/default-full-extra-v2-gcp/30/ckpt/71.ckpt
+# model_ckpt: nlp-xla-default-xse9mvyf-71.ckpt
 # model_ckpt: nlp-xla-default-oeuhc850-69.ckpt

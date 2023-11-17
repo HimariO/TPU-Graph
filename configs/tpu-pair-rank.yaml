@@ -13,7 +13,7 @@ dataset:
   task_type: ranking
   transductive: False
   dir: datasets/
-  source: xla+nlp
+  source: xla
   search: default
   num_sample_config: 24
   eval_num_sample_config: 96
@@ -55,7 +55,7 @@ gnn:
   layers_mp: 3
   layers_post_mp: 2
   dim_inner: 256
-  layer_type: sageconv
+  layer_type: sageconvlayer
   stage_type: skipsum
   batchnorm: False
   act: prelu
@@ -68,9 +68,9 @@ gnn:
   dim_out: 2  # <--
 optim:
   optimizer: adam
-  base_lr: 0.0001
+  base_lr: 0.001
   max_epoch: 4000
-  batch_accumulation: 1
+  batch_accumulation: 2
 share:
   dim_in: 286
 device: cuda

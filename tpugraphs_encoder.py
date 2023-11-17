@@ -288,6 +288,6 @@ if __name__ == '__main__':
     # test_dataset()
     # train()
     insert_node_feature(
-        "datasets/TPUGraphsNpz/processed/*_*_data_*.pt", 
+        "datasets/TPUGraphsNpz/processed/xla_tile_data_*.pt", 
         "feat-encoder-v2.ckpt",
     )

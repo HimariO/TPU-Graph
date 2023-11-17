@@ -300,3 +300,448 @@ pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/c
 pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/3e7156ac468dfb75cf5c9615e1e5887d.pb"  # bert
 pb_path = "/home/ron/Projects/TPU-Graph/datasets/pb/pb/layout/xla/default/test/e8a3a1401b5e79f66d7037e424f3b6df.pb"  # bert_classifier/sentence_prediction
 ```
+
+
+## NLP test to training set graph mapping
+
+```
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/b2fdde3b72980907578648774101543e.npz
+(1000, 72, 18)
+(72,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-768_A-12_batch_size_32_test.npz',
+  (72, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-768_A-12_batch_size_64_test.npz',
+  (72, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-256_A-4_batch_size_16_test.npz',
+  (72, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-128_A-2_batch_size_64_test.npz',
+  (72, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-512_A-8_batch_size_32_test.npz',
+  (72, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-512_A-8_batch_size_16_test.npz',
+  (72, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-128_A-2_batch_size_32_test.npz',
+  (72, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-256_A-4_batch_size_64_test.npz',
+  (72, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/29886a50d55cfe77a9497bc906c76ce9.npz
+(1000, 152, 18)
+(152,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-128_A-2_batch_size_32_train.npz',
+  (152, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-128_A-2_batch_size_16_train.npz',
+  (152, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/7105451001e119f65b66570d170b94a8.npz
+(1000, 104, 18)
+(104,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-2_H-768_A-12_batch_size_32_train.npz',
+  (104, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-2_H-256_A-4_batch_size_64_train.npz',
+  (104, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-2_H-768_A-12_batch_size_16_train.npz',
+  (104, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/171b0513d8874a427ccfa46d136fbadc.npz
+(1000, 344, 18)
+(344,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/electra_base_batch_size_16_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_32_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_64_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_64_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_32_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_cased_L-12_H-768_A-12_batch_size_16_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/electra_base_batch_size_64_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/electra_base_batch_size_32_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_cased_L-12_H-768_A-12_batch_size_64_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_pubmed_batch_size_32_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_multi_cased_L-12_H-768_A-12_batch_size_32_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_64_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_16_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_32_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_multi_cased_L-12_H-768_A-12_batch_size_64_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_32_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_16_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_cased_L-12_H-768_A-12_batch_size_32_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_16_train.npz',
+  (344, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_pubmed_batch_size_64_train.npz',
+  (344, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/60880ed76de53f4d7a1b960b24f20f7d.npz
+(1000, 120, 18)
+(120,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-128_A-2_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-512_A-8_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_pubmed_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-128_A-2_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_cased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_multi_cased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/electra_base_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/electra_base_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-512_A-8_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_cased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-128_A-2_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_pubmed_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-512_A-8_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_multi_cased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/58cc2e418c3a8a19b871e15964b534ad.npz
+(1000, 88, 18)
+(88,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-512_A-8_batch_size_16_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-256_A-4_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-128_A-2_batch_size_16_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_64_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-128_A-2_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_16_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-512_A-8_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-256_A-4_batch_size_64_test.npz',
+  (88, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/f6c146fc5cf10be4f3accbaca9897311.npz
+(1000, 200, 18)
+(200,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-128_A-2_batch_size_32_train.npz',
+  (200, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-128_A-2_batch_size_64_train.npz',
+  (200, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-6_H-128_A-2_batch_size_16_train.npz',
+  (200, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/38524e2ff135ded55b5286407e7af6b7.npz
+(1000, 120, 18)
+(120,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-128_A-2_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-512_A-8_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_pubmed_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-128_A-2_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_cased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_multi_cased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/electra_base_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/electra_base_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-512_A-8_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_cased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-128_A-2_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_pubmed_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-512_A-8_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_multi_cased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/3a0c5517a87df8d82fd637b83298a3ba.npz
+(1001, 848, 18)
+(848,)
+[]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/6c1101f6231f4d1722c3b9f6d1e25026.npz
+(1000, 104, 18)
+(104,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-2_H-128_A-2_batch_size_16_train.npz',
+  (104, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-2_H-512_A-8_batch_size_32_train.npz',
+  (104, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-2_H-128_A-2_batch_size_64_train.npz',
+  (104, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/016ac66a44a906a695afd2228509046a.npz
+(1000, 88, 18)
+(88,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-512_A-8_batch_size_16_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-256_A-4_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-128_A-2_batch_size_16_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_64_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-128_A-2_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_16_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-512_A-8_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-256_A-4_batch_size_64_test.npz',
+  (88, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/492c7a94d559aa4a88769142d2a68362.npz
+(1000, 248, 18)
+(248,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_16_train.npz',
+  (248, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-256_A-4_batch_size_32_train.npz',
+  (248, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-256_A-4_batch_size_64_train.npz',
+  (248, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_64_train.npz',
+  (248, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/d15316c12eefdef1ba549eb433797f77.npz
+(1000, 88, 18)
+(88,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-512_A-8_batch_size_16_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-256_A-4_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-128_A-2_batch_size_16_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_64_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-128_A-2_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-768_A-12_batch_size_16_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-512_A-8_batch_size_32_test.npz',
+  (88, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-8_H-256_A-4_batch_size_64_test.npz',
+  (88, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/7f6284ebe027b1e9a3850fc703858a59.npz
+(1000, 120, 18)
+(120,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-128_A-2_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-512_A-8_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_pubmed_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-128_A-2_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_cased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_uncased_L-12_H-768_A-12_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_multi_cased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_wiki_books_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-256_A-4_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/electra_base_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/electra_base_batch_size_64_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-512_A-8_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_en_cased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-128_A-2_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/experts_pubmed_batch_size_32_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-12_H-512_A-8_batch_size_16_test.npz',
+  (120, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/bert_multi_cased_L-12_H-768_A-12_batch_size_64_test.npz',
+  (120, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/32531d07a084b319dce484f53a4cf3fc.npz
+(1000, 152, 18)
+(152,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-512_A-8_batch_size_64_train.npz',
+  (152, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/23559853d9702baaaacbb0c83fd32266.npz
+(1000, 56, 18)
+(56,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-768_A-12_batch_size_32_test.npz',
+  (56, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-256_A-4_batch_size_16_test.npz',
+  (56, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-128_A-2_batch_size_64_test.npz',
+  (56, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-512_A-8_batch_size_64_test.npz',
+  (56, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-128_A-2_batch_size_32_test.npz',
+  (56, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-512_A-8_batch_size_16_test.npz',
+  (56, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-256_A-4_batch_size_64_test.npz',
+  (56, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-512_A-8_batch_size_32_test.npz',
+  (56, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-256_A-4_batch_size_32_test.npz',
+  (56, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/small_bert_bert_en_uncased_L-4_H-768_A-12_batch_size_64_test.npz',
+  (56, 18))]
+
+>> /root/data/tpugraphs/npz/layout/nlp/default/test/71b79ca6db513e7979c3702c595150c2.npz
+(1000, 288, 18)
+(288,)
+[('/root/data/tpugraphs/npz/layout/nlp/random/train/talking-heads_large_batch_size_32_test.npz',
+  (288, 18)),
+ ('/root/data/tpugraphs/npz/layout/nlp/random/train/talking-heads_large_batch_size_16_test.npz',
+  (288, 18))]
+```
+
+
+
+```py
+# concat nlp-rand+def (512 dim, 3 post_mp), no interval sample
+{'albert_en_xlarge_batch_size_16_test': 0.8127192982456141,
+ 'bert_en_cased_L-12_H-768_A-12_batch_size_16_test': 0.8695175438596491,
+ 'bert_multi_cased_L-12_H-768_A-12_batch_size_16_train': 0.6535087719298246,
+ 'small_bert_bert_en_uncased_L-10_H-128_A-2_batch_size_32_test': 0.836954136493307,
+ 'small_bert_bert_en_uncased_L-10_H-128_A-2_batch_size_64_train': 0.8508771929824561,
+ 'small_bert_bert_en_uncased_L-10_H-256_A-4_batch_size_32_test': 0.8776315789473684,
+ 'small_bert_bert_en_uncased_L-10_H-256_A-4_batch_size_64_train': 0.7986842105263158,
+ 'small_bert_bert_en_uncased_L-10_H-512_A-8_batch_size_64_test': 0.7526315789473684,
+ 'small_bert_bert_en_uncased_L-10_H-768_A-12_batch_size_16_train': 0.8115814871682386,
+ 'small_bert_bert_en_uncased_L-10_H-768_A-12_batch_size_32_test': 0.8335526315789473,
+ 'small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_64_train': 0.6089054617240623,
+ 'small_bert_bert_en_uncased_L-2_H-256_A-4_batch_size_32_train': 0.8124588725597719,
+ 'small_bert_bert_en_uncased_L-4_H-256_A-4_batch_size_32_train': 0.7980263157894737,
+ 'small_bert_bert_en_uncased_L-4_H-512_A-8_batch_size_32_train': 0.6094298245614035,
+ 'small_bert_bert_en_uncased_L-6_H-256_A-4_batch_size_16_train': 0.8072368421052631,
+ 'small_bert_bert_en_uncased_L-6_H-256_A-4_batch_size_64_train': 0.6964912280701754,
+ 'small_bert_bert_en_uncased_L-6_H-512_A-8_batch_size_64_test': 0.8019736842105263,
+ 'small_bert_bert_en_uncased_L-6_H-768_A-12_batch_size_16_test': 0.6787280701754386,
+ 'small_bert_bert_en_uncased_L-6_H-768_A-12_batch_size_32_train': 0.7350877192982456,
+ 'talking-heads_large_batch_size_16_train': 0.8513157894736842}
+
+
+# nlp-def only (bag of tricks, 256 dim, 0.1 dropout), no interval sample
+{'albert_en_xlarge_batch_size_16_test': 0.6765350877192983, 
+ 'bert_en_cased_L-12_H-768_A-12_batch_size_16_test': 0.8703947368421052,
+ 'bert_multi_cased_L-12_H-768_A-12_batch_size_16_train': 0.6828947368421052, #
+ 'small_bert_bert_en_uncased_L-10_H-128_A-2_batch_size_32_test': 0.8204959403116086,
+ 'small_bert_bert_en_uncased_L-10_H-128_A-2_batch_size_64_train': 0.7918859649122807, 
+ 'small_bert_bert_en_uncased_L-10_H-256_A-4_batch_size_32_test': 0.8401315789473685, 
+ 'small_bert_bert_en_uncased_L-10_H-256_A-4_batch_size_64_train': 0.8192982456140351, 
+ 'small_bert_bert_en_uncased_L-10_H-512_A-8_batch_size_64_test': 0.7407894736842106, 
+ 'small_bert_bert_en_uncased_L-10_H-768_A-12_batch_size_16_train': 0.8041237113402062, 
+ 'small_bert_bert_en_uncased_L-10_H-768_A-12_batch_size_32_test': 0.8230263157894737,
+ 'small_bert_bert_en_uncased_L-12_H-768_A-12_batch_size_64_train': 0.7622285588944944, #
+ 'small_bert_bert_en_uncased_L-2_H-256_A-4_batch_size_32_train': 0.7620092125466111,
+ 'small_bert_bert_en_uncased_L-4_H-256_A-4_batch_size_32_train': 0.819078947368421, #
+ 'small_bert_bert_en_uncased_L-4_H-512_A-8_batch_size_32_train': 0.8043859649122806, #
+ 'small_bert_bert_en_uncased_L-6_H-256_A-4_batch_size_16_train': 0.8304824561403509, #
+ 'small_bert_bert_en_uncased_L-6_H-256_A-4_batch_size_64_train': 0.6883771929824561,
+ 'small_bert_bert_en_uncased_L-6_H-512_A-8_batch_size_64_test': 0.8199561403508772, 
+ 'small_bert_bert_en_uncased_L-6_H-768_A-12_batch_size_16_test': 0.6699561403508771,
+ 'small_bert_bert_en_uncased_L-6_H-768_A-12_batch_size_32_train': 0.7552631578947369, 
+ 'talking-heads_large_batch_size_16_train': 0.8116228070175439}
+```
